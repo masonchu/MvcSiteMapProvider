@@ -121,6 +121,35 @@ namespace MvcSiteMapProvider
         }
 
         /// <summary>
+        /// Gets or sets the image URL protocol, such as http, https (optional).
+        /// If not provided, it will default to the protocol of the current request.
+        /// </summary>
+        /// <value>The protocol of the image URL.</value>
+        public override string ImageUrlProtocol 
+        {
+            get { return base.ImageUrlProtocol; }
+            set
+            {
+                this.ThrowIfReadOnly("ImageUrlProtocol");
+                base.ImageUrlProtocol = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the image URL host name, such as www.somewhere.com (optional).
+        /// </summary>
+        /// <value>The protocol of the image URL.</value>
+        public override string ImageUrlHostName 
+        {
+            get { return base.ImageUrlHostName; }
+            set
+            {
+                this.ThrowIfReadOnly("ImageUrlHostName");
+                base.ImageUrlHostName = value;
+            }
+        }
+
+        /// <summary>
         /// Gets or sets the last modified date.
         /// </summary>
         /// <value>The last modified date.</value>
@@ -269,6 +298,49 @@ namespace MvcSiteMapProvider
             }
         }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether to include ambient request values 
+        /// (from the RouteValues and/or query string) when resolving URLs.
+        /// </summary>
+        /// <value><b>true</b> to include ambient values (like MVC does); otherwise <b>false</b>.</value>
+        public override bool IncludeAmbientValuesInUrl
+        {
+            get { return base.IncludeAmbientValuesInUrl; }
+            set
+            {
+                this.ThrowIfReadOnly("IncludeAmbientValuesInUrl");
+                base.IncludeAmbientValuesInUrl = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the protocol, such as http or https that will 
+        /// be built into the URL.
+        /// </summary>
+        /// <value>The protocol.</value>
+        public override string Protocol
+        {
+            get { return base.Protocol; }
+            set
+            {
+                this.ThrowIfReadOnly("Protocol");
+                base.Protocol = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the host name that will be built into the URL.
+        /// </summary>
+        /// <value>The host name.</value>
+        public override string HostName
+        {
+            get { return base.HostName; }
+            set
+            {
+                this.ThrowIfReadOnly("HostName");
+                base.HostName = value;
+            }
+        }
 
         /// <summary>
         /// Sets the ResolvedUrl using the current Url or Url resolver.
@@ -279,15 +351,28 @@ namespace MvcSiteMapProvider
             base.ResolveUrl();
         }
 
-
         #endregion
 
         #region Canonical Tag
 
         /// <summary>
+        /// Gets or sets the canonical key. The key is used to reference another <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> to get the canonical URL.
+        /// </summary>
+        /// <remarks>May not be used in conjunction with CanonicalUrl; only 1 canonical value is allowed.</remarks>
+        public override string CanonicalKey
+        {
+            get { return base.CanonicalKey; }
+            set
+            {
+                this.ThrowIfReadOnly("CanonicalKey");
+                base.CanonicalKey = value;
+            }
+        }
+
+        /// <summary>
         /// Gets or sets the canonical URL.
         /// </summary>
-        /// <remarks>May not be used in conjuntion with CanonicalKey. Only 1 canonical value is allowed.</remarks>
+        /// <remarks>May not be used in conjunction with CanonicalKey; only 1 canonical value is allowed.</remarks>
         public override string CanonicalUrl
         {
             get { return base.CanonicalUrl; }
@@ -299,19 +384,32 @@ namespace MvcSiteMapProvider
         }
 
         /// <summary>
-        /// Gets or sets the canonical key. The key is used to reference another <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> to get the canonical URL.
+        /// Gets or sets the canonical URL protocol, such as http, https (optional).
         /// </summary>
-        /// <remarks>May not be used in conjuntion with CanonicalUrl. Only 1 canonical value is allowed.</remarks>
-        public override string CanonicalKey
+        /// <value>The protocol of the image URL.</value>
+        public override string CanonicalUrlProtocol 
         {
-            get { return base.CanonicalKey; }
+            get { return base.CanonicalUrlProtocol; }
             set
             {
-                this.ThrowIfReadOnly("CanonicalKey");
-                base.CanonicalKey = value;
+                this.ThrowIfReadOnly("CanonicalUrlProtocol");
+                base.CanonicalUrlProtocol = value;
             }
         }
 
+        /// <summary>
+        /// Gets or sets the canonical URL host name, such as www.somewhere.com (optional).
+        /// </summary>
+        /// <value>The protocol of the image URL.</value>
+        public override string CanonicalUrlHostName 
+        {
+            get { return base.CanonicalUrlHostName; }
+            set
+            {
+                this.ThrowIfReadOnly("CanonicalUrlHostName");
+                base.CanonicalUrlHostName = value;
+            }
+        }
 
         #endregion
 
@@ -384,9 +482,8 @@ namespace MvcSiteMapProvider
         {
             if (this.IsReadOnly)
             {
-                throw new InvalidOperationException(String.Format(Resources.Messages.SiteMapNodeReadOnly, memberName));
+                throw new InvalidOperationException(string.Format(Resources.Messages.SiteMapNodeReadOnly, memberName));
             }
         }
-
     }
 }

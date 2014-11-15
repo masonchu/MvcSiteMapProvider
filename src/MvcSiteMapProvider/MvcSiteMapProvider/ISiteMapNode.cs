@@ -11,7 +11,7 @@ namespace MvcSiteMapProvider
     /// node in the hierarchy.
     /// </summary>
     public interface ISiteMapNode
-        : ISortable
+        : ISortable, IEquatable<ISiteMapNode>
     {
         string Key { get; }
         bool IsDynamic { get; }
@@ -38,6 +38,8 @@ namespace MvcSiteMapProvider
         string Description { get; set; }
         string TargetFrame { get; set; }
         string ImageUrl { get; set; }
+        string ImageUrlProtocol { get; set; }
+        string ImageUrlHostName { get; set; }
         IAttributeDictionary Attributes { get; }
         IRoleCollection Roles { get; }
 
@@ -59,11 +61,16 @@ namespace MvcSiteMapProvider
         string ResolvedUrl { get; }
         bool CacheResolvedUrl { get; set; }
         void ResolveUrl();
+        bool IncludeAmbientValuesInUrl { get; set; }
+        string Protocol { get; set; }
+        string HostName { get; set; }
         bool HasAbsoluteUrl();
         bool HasExternalUrl(HttpContextBase httpContext);
 
-        string CanonicalUrl { get; set; }
         string CanonicalKey { get; set; }
+        string CanonicalUrl { get; set; }
+        string CanonicalUrlProtocol { get; set; }
+        string CanonicalUrlHostName { get; set; }
 
         IMetaRobotsValueCollection MetaRobotsValues { get; }
         string GetMetaRobotsContentString();
@@ -74,7 +81,7 @@ namespace MvcSiteMapProvider
         IPreservedRouteParameterCollection PreservedRouteParameters { get; }
         RouteData GetRouteData(HttpContextBase httpContext);
         bool MatchesRoute(IDictionary<string, object> routeValues);
-
+        
         string Area { get; set; }
         string Controller { get; set; }
         string Action { get; set; }

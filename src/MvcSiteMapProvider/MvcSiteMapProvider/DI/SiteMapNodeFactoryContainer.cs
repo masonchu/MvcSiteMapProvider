@@ -26,7 +26,10 @@ namespace MvcSiteMapProvider.DI
             IUrlPath urlPath,
             IReservedAttributeNameProvider reservedAttributeNameProvider)
         {
-            this.absoluteFileName = HostingEnvironment.MapPath(settings.SiteMapFileName);
+            if (settings.EnableSiteMapFile)
+            {
+                this.absoluteFileName = HostingEnvironment.MapPath(settings.SiteMapFileName);
+            }
             this.settings = settings;
             this.mvcContextFactory = mvcContextFactory;
             this.requestCache = this.mvcContextFactory.GetRequestCache();
@@ -93,9 +96,7 @@ namespace MvcSiteMapProvider.DI
         private IDynamicNodeProvider[] ResolveDynamicNodeProviders()
         {
             var instantiator = new PluginInstantiator<IDynamicNodeProvider>();
-            var xmlSource = new FileXmlSource(this.absoluteFileName);
-            var typeNames = xmlAggergator.GetAttributeValues(xmlSource, "dynamicNodeProvider");
-
+            var typeNames = this.GetMvcSiteMapNodeXmlDistinctAttributeValues("dynamicNodeProvider");
             var attributeTypeNames = this.GetMvcSiteMapNodeAttributeDynamicNodeProviderNames();
             foreach (var typeName in attributeTypeNames)
             {
@@ -112,9 +113,7 @@ namespace MvcSiteMapProvider.DI
         private ISiteMapNodeUrlResolver[] ResolveSiteMapNodeUrlResolvers()
         {
             var instantiator = new PluginInstantiator<ISiteMapNodeUrlResolver>();
-            var xmlSource = new FileXmlSource(this.absoluteFileName);
-            var typeNames = xmlAggergator.GetAttributeValues(xmlSource, "urlResolver");
-
+            var typeNames = this.GetMvcSiteMapNodeXmlDistinctAttributeValues("urlResolver");
             var attributeTypeNames = this.GetMvcSiteMapNodeAttributeUrlResolverNames();
             foreach (var typeName in attributeTypeNames)
             {
@@ -138,9 +137,7 @@ namespace MvcSiteMapProvider.DI
         private ISiteMapNodeVisibilityProvider[] ResolveSiteMapNodeVisibilityProviders(string defaultVisibilityProviderName)
         {
             var instantiator = new PluginInstantiator<ISiteMapNodeVisibilityProvider>();
-            var xmlSource = new FileXmlSource(this.absoluteFileName);
-            var typeNames = xmlAggergator.GetAttributeValues(xmlSource, "visibilityProvider");
-
+            var typeNames = this.GetMvcSiteMapNodeXmlDistinctAttributeValues("visibilityProvider");
             var attributeTypeNames = this.GetMvcSiteMapNodeAttributeVisibilityProviderNames();
             foreach (var typeName in attributeTypeNames)
             {
@@ -151,7 +148,7 @@ namespace MvcSiteMapProvider.DI
             }
 
             // Fixes #196, default instance not created.
-            if (!String.IsNullOrEmpty(defaultVisibilityProviderName) && !typeNames.Contains(defaultVisibilityProviderName))
+            if (!string.IsNullOrEmpty(defaultVisibilityProviderName) && !typeNames.Contains(defaultVisibilityProviderName))
             {
                 typeNames.Add(defaultVisibilityProviderName);
             }
@@ -159,6 +156,16 @@ namespace MvcSiteMapProvider.DI
             return providers.ToArray();
         }
 
+        private IList<string> GetMvcSiteMapNodeXmlDistinctAttributeValues(string attributeName)
+        {
+            IList<string> result = new List<string>();
+            if (this.settings.EnableSiteMapFile)
+            {
+                var xmlSource = new FileXmlSource(this.absoluteFileName);
+                result = xmlAggergator.GetAttributeValues(xmlSource, attributeName);
+            }
+            return result;
+        }
 
         private IEnumerable<string> GetMvcSiteMapNodeAttributeDynamicNodeProviderNames()
         {
@@ -168,7 +175,7 @@ namespace MvcSiteMapProvider.DI
                 var assemblies = assemblyProvider.GetAssemblies();
                 var definitions = mvcSiteMapNodeAttributeProvider.GetMvcSiteMapNodeAttributeDefinitions(assemblies);
                 result.AddRange(definitions
-                    .Where(x => !String.IsNullOrEmpty(x.SiteMapNodeAttribute.DynamicNodeProvider))
+                    .Where(x => !string.IsNullOrEmpty(x.SiteMapNodeAttribute.DynamicNodeProvider))
                     .Select(x => x.SiteMapNodeAttribute.DynamicNodeProvider)
                     );
             }
@@ -183,7 +190,7 @@ namespace MvcSiteMapProvider.DI
                 var assemblies = assemblyProvider.GetAssemblies();
                 var definitions = mvcSiteMapNodeAttributeProvider.GetMvcSiteMapNodeAttributeDefinitions(assemblies);
                 result.AddRange(definitions
-                    .Where(x => !String.IsNullOrEmpty(x.SiteMapNodeAttribute.UrlResolver))
+                    .Where(x => !string.IsNullOrEmpty(x.SiteMapNodeAttribute.UrlResolver))
                     .Select(x => x.SiteMapNodeAttribute.UrlResolver)
                     );
             }
@@ -198,7 +205,7 @@ namespace MvcSiteMapProvider.DI
                 var assemblies = assemblyProvider.GetAssemblies();
                 var definitions = mvcSiteMapNodeAttributeProvider.GetMvcSiteMapNodeAttributeDefinitions(assemblies);
                 result.AddRange(definitions
-                    .Where(x => !String.IsNullOrEmpty(x.SiteMapNodeAttribute.VisibilityProvider))
+                    .Where(x => !string.IsNullOrEmpty(x.SiteMapNodeAttribute.VisibilityProvider))
                     .Select(x => x.SiteMapNodeAttribute.VisibilityProvider)
                     );
             }

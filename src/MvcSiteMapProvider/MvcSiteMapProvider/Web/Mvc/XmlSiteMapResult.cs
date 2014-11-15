@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Web;
 using System.Web.Mvc;
 using System.Xml;
 using System.Xml.Linq;
 using System.IO;
 using System.IO.Compression;
 using System.Globalization;
+using MvcSiteMapProvider.Globalization;
 using MvcSiteMapProvider.Loader;
 
 namespace MvcSiteMapProvider.Web.Mvc
@@ -24,12 +26,15 @@ namespace MvcSiteMapProvider.Web.Mvc
             string baseUrl,
             string siteMapUrlTemplate,
             ISiteMapLoader siteMapLoader,
-            IUrlPath urlPath)
+            IUrlPath urlPath,
+            ICultureContextFactory cultureContextFactory)
         {
             if (siteMapLoader == null)
                 throw new ArgumentNullException("siteMapLoader");
             if (urlPath == null)
                 throw new ArgumentNullException("urlPath");
+            if (cultureContextFactory == null)
+                throw new ArgumentNullException("cultureContextFactory");
 
             this.Ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
             this.Page = page;
@@ -39,11 +44,13 @@ namespace MvcSiteMapProvider.Web.Mvc
             this.SiteMapUrlTemplate = siteMapUrlTemplate;
             this.siteMapLoader = siteMapLoader;
             this.urlPath = urlPath;
+            this.cultureContextFactory = cultureContextFactory;
         }
 
         protected readonly ISiteMapLoader siteMapLoader;
         protected readonly IUrlPath urlPath;
-        protected readonly List<string> duplicateUrlCheck = new List<string>();
+        protected readonly ICultureContextFactory cultureContextFactory;
+        protected readonly HashSet<string> duplicateUrlCheck = new HashSet<string>();
 
         /// <summary>
         /// Maximal number of links per sitemap file.
@@ -229,8 +236,8 @@ namespace MvcSiteMapProvider.Web.Mvc
             // Generate elements
             for (int i = 1; i <= numPages; i++)
             {
-                var combinedPath = urlPath.Combine(urlPath.AppDomainAppVirtualPath, "~/" + siteMapUrlTemplate.Replace("{page}", i.ToString()));
-                var pageUrl = baseUrl + urlPath.MakeVirtualPathAppAbsolute(combinedPath);
+                var templateUrl = "~/" + siteMapUrlTemplate.Replace("{page}", i.ToString());
+                var pageUrl = this.urlPath.MakeUrlAbsolute(baseUrl, templateUrl);
                 yield return new XElement(Ns + "sitemap", new XElement(Ns + "loc", pageUrl));
             }
         }
@@ -239,7 +246,7 @@ namespace MvcSiteMapProvider.Web.Mvc
         /// Generates the URL elements.
         /// </summary>
         /// <param name="siteMapNodes">The site map nodes.</param>
-        /// <param name="url">The URL.</param>
+        /// <param name="baseUrl">The base URL.</param>
         /// <returns>The URL elements.</returns>
         protected virtual IEnumerable<XElement> GenerateUrlElements(ControllerContext context, IEnumerable<ISiteMapNode> siteMapNodes, string baseUrl)
         {
@@ -247,22 +254,26 @@ namespace MvcSiteMapProvider.Web.Mvc
             foreach (var siteMapNode in siteMapNodes)
             {
                 // Generate element
-                var nodeUrl = this.GetAbsoluteUrl(siteMapNode);
+                var nodeUrl = this.urlPath.MakeUrlAbsolute(this.BaseUrl, siteMapNode.Url);
                 var urlElement = new XElement(Ns + "url",
                     new XElement(Ns + "loc", nodeUrl));
 
-                // Generate element properties
-                if (siteMapNode.LastModifiedDate > DateTime.MinValue)
+                // Switch to the invariant culture when evaluating DateTime.MinValue, doing ToLower(), and doing string.Format()
+                using (var cultureContext = this.cultureContextFactory.CreateInvariant())
                 {
-                    urlElement.Add(new XElement(Ns + "lastmod", siteMapNode.LastModifiedDate.ToUniversalTime()));
-                }
-                if (siteMapNode.ChangeFrequency != ChangeFrequency.Undefined)
-                {
-                    urlElement.Add(new XElement(Ns + "changefreq", siteMapNode.ChangeFrequency.ToString().ToLowerInvariant()));
-                }
-                if (siteMapNode.UpdatePriority != UpdatePriority.Undefined)
-                {
-                    urlElement.Add(new XElement(Ns + "priority", string.Format(CultureInfo.InvariantCulture, "{0:0.0}", ((double)siteMapNode.UpdatePriority / 100))));
+                    // Generate element properties
+                    if (siteMapNode.LastModifiedDate > DateTime.MinValue)
+                    {
+                        urlElement.Add(new XElement(Ns + "lastmod", siteMapNode.LastModifiedDate.ToUniversalTime()));
+                    }
+                    if (siteMapNode.ChangeFrequency != ChangeFrequency.Undefined)
+                    {
+                        urlElement.Add(new XElement(Ns + "changefreq", siteMapNode.ChangeFrequency.ToString().ToLower()));
+                    }
+                    if (siteMapNode.UpdatePriority != UpdatePriority.Undefined)
+                    {
+                        urlElement.Add(new XElement(Ns + "priority", string.Format("{0:0.0}", ((double)siteMapNode.UpdatePriority / 100))));
+                    }
                 }
 
                 // Return
@@ -308,28 +319,54 @@ namespace MvcSiteMapProvider.Web.Mvc
         /// <returns><b>true</b> if the current node should be rendered; otherwise<b>false</b>.</returns>
         protected virtual bool ShouldNodeRender(ISiteMapNode node, ControllerContext context)
         {
+
             return node.Clickable &&
                 node.IsVisible(SourceMetadata) &&
                 !node.HasExternalUrl(context.HttpContext) &&
-                String.IsNullOrEmpty(node.CanonicalUrl) &&
+                this.IsCanonicalUrl(node, context.HttpContext) &&
                 !node.HasNoIndexAndNoFollow &&
                 !this.IsDuplicateUrl(node);
         }
 
         /// <summary>
-        /// Gets the absolute URL for a node.
+        /// Determines whether the URL of the current node is a canonical node. 
         /// </summary>
-        /// <param name="node">The node.</param>
-        /// <returns>The absolute URL.</returns>
-        protected virtual string GetAbsoluteUrl(ISiteMapNode node)
+        /// <param name="node">The node</param>
+        /// <returns><c>true</c> if the node's URL is canonical; otherwise<c>false</c>.</returns>
+        protected virtual bool IsCanonicalUrl(ISiteMapNode node, HttpContextBase context)
         {
-            var nodeUrl = node.Url;
-            var result = nodeUrl;
-            if (!node.HasAbsoluteUrl())
+            var canonicalUrl = node.CanonicalUrl;
+            if (string.IsNullOrEmpty(canonicalUrl))
             {
-                result = this.BaseUrl + nodeUrl;
+                return true;
             }
-            return result;
+
+            string absoluteUrl = string.Empty;
+
+            if (string.IsNullOrEmpty(node.Protocol) && string.IsNullOrEmpty(node.HostName))
+            {
+                var mvcContextFactory = new MvcContextFactory();
+
+                // Use the HTTP protocol to force an absolute URL to compare with if no protocol was provided.
+                var protocol = string.IsNullOrEmpty(node.Protocol) ? Uri.UriSchemeHttp : node.Protocol;
+
+                // Create a URI with the home page and no query string values.
+                var uri = new Uri(context.Request.Url, "/");
+
+                // Create a TextWriter with null stream as a backing stream 
+                // which doesn't consume resources
+                using (var nullWriter = new StreamWriter(Stream.Null))
+                {
+                    var newContext = mvcContextFactory.CreateHttpContext(node, uri, nullWriter);
+                    absoluteUrl = this.urlPath.ResolveUrl(node.Url, protocol, node.HostName, newContext);
+                }
+            }
+            else
+            {
+                absoluteUrl = node.Url;
+            }
+
+            return absoluteUrl.Equals(node.CanonicalUrl, StringComparison.Ordinal) || absoluteUrl.Equals("#");
         }
 
         /// <summary>
@@ -339,7 +376,7 @@ namespace MvcSiteMapProvider.Web.Mvc
         /// <returns><b>true</b> if the URL of the node is a duplicate; otherwise <b>false</b>.</returns>
         protected virtual bool IsDuplicateUrl(ISiteMapNode node)
         {
-            var absoluteUrl = this.GetAbsoluteUrl(node);
+            var absoluteUrl = this.urlPath.MakeUrlAbsolute(this.BaseUrl, node.Url);
             var isDuplicate = this.duplicateUrlCheck.Contains(absoluteUrl);
             if (!isDuplicate)
             {

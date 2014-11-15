@@ -242,7 +242,7 @@ namespace MvcSiteMapProvider.Builder
             }
 
             // Create nodes
-            foreach (var assemblyNode in definitions.Where(t => !String.IsNullOrEmpty(t.SiteMapNodeAttribute.ParentKey)))
+            foreach (var assemblyNode in definitions.Where(t => !string.IsNullOrEmpty(t.SiteMapNodeAttribute.ParentKey)))
             {
                 ISiteMapNode nodeToAdd = null;
 
@@ -283,7 +283,7 @@ namespace MvcSiteMapProvider.Builder
                             foreach (var dynamicNode in dynamicNodesForChildNode)
                             {
                                 // Verify parent/child relation
-                                if (dynamicNode.ParentNode == parentNode
+                                if (dynamicNode.ParentNode.Equals(parentNode)
                                     && !siteMap.GetChildNodes(parentNode).Contains(dynamicNode))
                                 {
                                     siteMap.AddNode(dynamicNode, parentNode);
@@ -325,7 +325,7 @@ namespace MvcSiteMapProvider.Builder
                             foreach (var dynamicNode in dynamicNodesForChildNode)
                             {
                                 // Verify parent/child relation
-                                if (dynamicNode.ParentNode == parentNode
+                                if (dynamicNode.ParentNode.Equals(parentNode)
                                     && !siteMap.GetChildNodes(parentNode).Contains(dynamicNode))
                                 {
                                     siteMap.AddNode(dynamicNode, parentNode);
@@ -362,7 +362,7 @@ namespace MvcSiteMapProvider.Builder
                 throw new ArgumentNullException("type");
             }
 
-            if (!String.IsNullOrEmpty(attribute.SiteMapCacheKey))
+            if (!string.IsNullOrEmpty(attribute.SiteMapCacheKey))
             {
                 // Return null if the attribute doesn't apply to this cache key
                 if (!this.SiteMapCacheKey.Equals(attribute.SiteMapCacheKey))
@@ -391,7 +391,7 @@ namespace MvcSiteMapProvider.Builder
             {
                 area = attribute.AreaName;
             }
-            if (String.IsNullOrEmpty(area) && !String.IsNullOrEmpty(attribute.Area))
+            if (string.IsNullOrEmpty(area) && !string.IsNullOrEmpty(attribute.Area))
             {
                 area = attribute.Area;
             }
@@ -418,7 +418,7 @@ namespace MvcSiteMapProvider.Builder
                 }
             }
 
-            string httpMethod = String.IsNullOrEmpty(attribute.HttpMethod) ? HttpVerbs.Get.ToString().ToUpperInvariant() : attribute.HttpMethod.ToUpperInvariant();
+            string httpMethod = string.IsNullOrEmpty(attribute.HttpMethod) ? HttpVerbs.Get.ToString().ToUpperInvariant() : attribute.HttpMethod.ToUpperInvariant();
 
             // Handle title
             var title = attribute.Title;
@@ -447,12 +447,19 @@ namespace MvcSiteMapProvider.Builder
             siteMapNode.VisibilityProvider = attribute.VisibilityProvider;
             siteMapNode.DynamicNodeProvider = attribute.DynamicNodeProvider;
             siteMapNode.ImageUrl = attribute.ImageUrl;
+            siteMapNode.ImageUrlProtocol = attribute.ImageUrlProtocol;
+            siteMapNode.ImageUrlHostName = attribute.ImageUrlHostName;
             siteMapNode.TargetFrame = attribute.TargetFrame;
             siteMapNode.HttpMethod = httpMethod;
             if (!string.IsNullOrEmpty(attribute.Url)) siteMapNode.Url = attribute.Url;
             siteMapNode.CacheResolvedUrl = attribute.CacheResolvedUrl;
-            siteMapNode.CanonicalUrl = attribute.CanonicalUrl;
+            siteMapNode.IncludeAmbientValuesInUrl = attribute.IncludeAmbientValuesInUrl;
+            siteMapNode.Protocol = attribute.Protocol;
+            siteMapNode.HostName = attribute.HostName;
             siteMapNode.CanonicalKey = attribute.CanonicalKey;
+            siteMapNode.CanonicalUrl = attribute.CanonicalUrl;
+            siteMapNode.CanonicalUrlProtocol = attribute.CanonicalUrlProtocol;
+            siteMapNode.CanonicalUrlHostName = attribute.CanonicalUrlHostName;
             siteMapNode.MetaRobotsValues.AddRange(attribute.MetaRobotsValues);
             siteMapNode.LastModifiedDate = string.IsNullOrEmpty(attribute.LastModifiedDate) ? DateTime.MinValue : DateTime.Parse(attribute.LastModifiedDate, CultureInfo.InvariantCulture);
             siteMapNode.ChangeFrequency = attribute.ChangeFrequency;
@@ -464,7 +471,7 @@ namespace MvcSiteMapProvider.Builder
             siteMapNode.RouteValues.AddRange(attribute.Attributes, false);
             siteMapNode.PreservedRouteParameters.AddRange(attribute.PreservedRouteParameters, new[] { ',', ';' });
             siteMapNode.UrlResolver = attribute.UrlResolver;
-
+            
             // Specified area, controller and action properties will override any 
             // provided in the attributes collection.
             if (!string.IsNullOrEmpty(area)) siteMapNode.RouteValues.Add("area", area);

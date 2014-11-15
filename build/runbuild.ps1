@@ -4,6 +4,7 @@ properties {
 	$source_directory = "$base_directory\src\MvcSiteMapProvider"
 	$nuget_directory  = "$base_directory\nuget"
 	$tools_directory  = "$base_directory\tools"
+	$output_directory = "$build_directory\packagesource"
 	$version          = "4.0.0"
 	$packageVersion   = "$version-pre"
 	$configuration    = "Release"
@@ -26,12 +27,19 @@ task Init -description "This tasks makes sure the build environment is correctly
 		echo "Updated version to: $version"
 	}
 	
+	#Backup the original CommonAssemblyInfo.cs file
+	Ensure-Directory-Exists "$build_directory\test.temp"
+	Copy-Item "$source_directory\Shared\CommonAssemblyInfo.cs" "$build_directory\CommonAssemblyInfo.cs"
+
+	#Get the current year from the system
+	$year = [DateTime]::Today.Year
+
 	Generate-Assembly-Info `
 		-file "$source_directory\Shared\CommonAssemblyInfo.cs" `
 		-company "MvcSiteMapProvider" `
 		-version $version `
 		-packageVersion $packageVersion `
-		-copyright "Copyright © MvcSiteMapProvider 2009 - 2013"
+		-copyright "Copyright © MvcSiteMapProvider 2009 - $year"
 }
 
 task Restore -depends Clean -description "This task runs NuGet package restore" {
@@ -40,18 +48,41 @@ task Restore -depends Clean -description "This task runs NuGet package restore" 
 	}
 }
 
-task Compile -depends Clean, Init, Restore -description "This task compiles the solution" {
+task Test -depends Clean, Init, Restore -description "This tasks runs the unit tests" {
+	Write-Host "Running Unit Tests..." -ForegroundColor Magenta
+
+	$target_project = "$source_directory\MvcSiteMapProvider.Tests\MvcSiteMapProvider.Tests.csproj"
+
+	exec { 
+		msbuild $target_project `
+			/verbosity:quiet `
+			/property:Configuration=$configuration `
+			"/t:Clean;Rebuild" `
+			/property:WarningLevel=3 `
+			/property:DefineConstants=`" MVC4`;NET40`" `
+			/property:TargetFrameworkVersion=v4.0 `"
+	}
+
+	exec {
+		&"$tools_directory\nunit\nunit-console.exe" $target_project /config:$configuration /noshadow /noresult /framework:net-4.0
+	}
+}
+
+task Compile -depends Test -description "This task compiles the solution" {
 
 	Write-Host "Compiling..." -ForegroundColor Green
 
-	Build-MvcSiteMapProvider-Core-Versions ("net35", "net40", "net45") -mvc_version "2"
-	Build-MvcSiteMapProvider-Core-Versions ("net40", "net45") -mvc_version "3"
-	Build-MvcSiteMapProvider-Core-Versions ("net40", "net45") -mvc_version "4"
-	Build-MvcSiteMapProvider-Core-Versions ("net45") -mvc_version "5"
+	Build-MvcSiteMapProvider-Versions ("net35", "net40", "net45") -mvc_version "2"
+	Build-MvcSiteMapProvider-Versions ("net40", "net45") -mvc_version "3"
+	Build-MvcSiteMapProvider-Versions ("net40", "net45") -mvc_version "4"
+	Build-MvcSiteMapProvider-Versions ("net45") -mvc_version "5"
 }
 
 task NuGet -depends Compile -description "This tasks makes creates the NuGet packages" {
 	
+	#create the nuget package output directory
+	Ensure-Directory-Exists "$output_directory\test.temp"
+
 	#link the legacy package to the highest MVC version
 	Create-MvcSiteMapProvider-Legacy-Package -mvc_version "4"
 
@@ -67,19 +98,12 @@ task NuGet -depends Compile -description "This tasks makes creates the NuGet pac
 
 	Create-MvcSiteMapProvider-Web-Package
 	
-	Create-DIContainer-Packages ("Autofac", "Ninject", "SimpleInjector", "StructureMap", "Unity", "Windsor")
-
-	Move-Item *.nupkg $base_directory\release
+	Create-DIContainer-Packages ("Autofac", "Grace", "Ninject", "SimpleInjector", "StructureMap", "Unity", "Windsor")
 }
 
 task Finalize -depends NuGet -description "This tasks finalizes the build" {  
-	#Change the assembly info file to be the same way it was before
-	Generate-Assembly-Info `
-		-file "$source_directory\Shared\CommonAssemblyInfo.cs" `
-		-company "MvcSiteMapProvider" `
-		-version $version `
-		-packageVersion $version `
-		-copyright "Copyright © MvcSiteMapProvider 2009 - 2013"
+	#Restore the original CommonAssemblyInfo.cs file from backup
+	Move-Item "$build_directory\CommonAssemblyInfo.cs" "$source_directory\Shared\CommonAssemblyInfo.cs" -Force
 }
 
 function Transform-Nuspec ([string] $source, [string] $transform, [string] $destination) {
@@ -127,27 +151,21 @@ function Tokenize-Namespaces ([string] $source) {
 	} | Set-Content $source -Force
 }
 
-function Build-MvcSiteMapProvider-Core-Versions ([string[]] $net_versions, [string] $mvc_version) {
+function Build-MvcSiteMapProvider-Versions ([string[]] $net_versions, [string] $mvc_version) {
 	#create the build for each version of the framework
 	foreach ($net_version in $net_versions) {
-		Build-MvcSiteMapProvider-Core-Version $net_version $mvc_version
+		Build-MvcSiteMapProvider-Version $net_version $mvc_version
+		Build-MvcSiteMapProvider-WebActivator-Version $net_version $mvc_version
 	}
 }
 
-function Build-MvcSiteMapProvider-Core-Version ([string] $net_version, [string] $mvc_version) {
+function Build-MvcSiteMapProvider-Version ([string] $net_version, [string] $mvc_version) {
 	$net_version_upper = $net_version.toUpper()
 	Write-Host "Compiling MvcSiteMapProvider for $net_version_upper, MVC$mvc_version" -ForegroundColor Blue
 	$outdir = "$build_directory\mvcsitemapprovider.mvc$mvc_version.core\lib\$net_version\"
-
-	if ($net_version -eq "net35") {
-		$targetFramework = "v3.5"
-	}
-	if ($net_version -eq "net40") {
-		$targetFramework = "v4.0"
-	}
-	if ($net_version -eq "net45") {
-		$targetFramework = "v4.5"
-	}
+	$documentation_file = $outdir + "MvcSiteMapProvider.xml"
+	$targetFramework = Get-TargetFramework-Version $net_version
+	Write-Host "Targeting framework $targetFramework" -ForegroundColor Cyan
 
 	exec { 
 		msbuild $source_directory\MvcSiteMapProvider\MvcSiteMapProvider.csproj `
@@ -158,10 +176,36 @@ function Build-MvcSiteMapProvider-Core-Version ([string] $net_version, [string] 
 			/property:WarningLevel=3 `
 			/property:DefineConstants=`" MVC$mvc_version`;$net_version_upper`" `
 			/property:TargetFrameworkVersion=$targetFramework `
-			/property:EnableNuGetPackageRestore=true
+			/property:DocumentationFile=`"$documentation_file`"
 	}
-	
+
 	dir $outdir | ?{ -not($_.Name -match 'MvcSiteMapProvider') } | %{ del $_.FullName }
+}
+
+function Build-MvcSiteMapProvider-WebActivator-Version ([string] $net_version, [string] $mvc_version) {
+	$net_version_upper = $net_version.toUpper()
+	Write-Host "Compiling MvcSiteMapProvider.WebActivator for $net_version_upper, MVC$mvc_version" -ForegroundColor Blue
+	$outdir = "$build_directory\mvcsitemapprovider.mvc$mvc_version\lib\$net_version\"
+	$documentation_file = $outdir + "MvcSiteMapProvider.WebActivator.xml"
+	$targetFramework = Get-TargetFramework-Version $net_version
+	Write-Host "Targeting framework $targetFramework" -ForegroundColor Cyan
+
+	#Create a webactivator for all versions except .NET 3.5
+	if ($net_version -ne "net35") {
+		exec { 
+			msbuild $source_directory\MvcSiteMapProvider.WebActivator\MvcSiteMapProvider.WebActivator.csproj `
+				/property:outdir=$outdir `
+				/verbosity:quiet `
+				/property:Configuration=$configuration `
+				"/t:Clean;Rebuild" `
+				/property:WarningLevel=3 `
+				/property:DefineConstants=`" MVC$mvc_version`;$net_version_upper`" `
+				/property:TargetFrameworkVersion=$targetFramework `
+				/property:DocumentationFile=`"$documentation_file`"
+		}
+
+		dir $outdir | ?{ -not($_.Name -match 'MvcSiteMapProvider.WebActivator') } | %{ del $_.FullName }
+	}
 }
 
 function Create-MvcSiteMapProvider-Legacy-Package ([string] $mvc_version) {
@@ -183,7 +227,7 @@ function Create-MvcSiteMapProvider-Legacy-Package ([string] $mvc_version) {
 	Copy-Item $nuget_directory\mvcsitemapprovider.legacy\* $build_directory\mvcsitemapprovider -Recurse -Exclude @("*.nuspec", "*.nutrans")
 	
 	exec { 
-		&"$tools_directory\nuget\NuGet.exe" pack $output_nuspec_file -Symbols -Version $packageVersion
+		&"$tools_directory\nuget\NuGet.exe" pack $output_nuspec_file -Symbols -Version $packageVersion -OutputDirectory $output_directory
 	}
 }
 
@@ -206,7 +250,7 @@ function Create-MvcSiteMapProvider-Package ([string] $mvc_version) {
 	Copy-Item $nuget_directory\mvcsitemapprovider\* $build_directory\mvcsitemapprovider.mvc$mvc_version -Recurse -Exclude @("*.nuspec", "*.nutrans")
 
 	exec { 
-		&"$tools_directory\nuget\NuGet.exe" pack $output_nuspec_file -Symbols -Version $packageVersion
+		&"$tools_directory\nuget\NuGet.exe" pack $output_nuspec_file -Symbols -Version $packageVersion -OutputDirectory $output_directory
 	}
 }
 
@@ -232,7 +276,7 @@ function Create-MvcSiteMapProvider-Core-Package ([string] $mvc_version) {
 	Copy-Item -Recurse -Filter *.cs -Force "$source_directory\MvcSiteMapProvider" "$build_directory\mvcsitemapprovider.mvc$mvc_version.core\src"
 
 	exec { 
-		&"$tools_directory\nuget\NuGet.exe" pack $output_nuspec_file -Symbols -Version $packageVersion
+		&"$tools_directory\nuget\NuGet.exe" pack $output_nuspec_file -Symbols -Version $packageVersion -OutputDirectory $output_directory
 	}
 }
 
@@ -248,7 +292,7 @@ function Create-MvcSiteMapProvider-Web-Package {
 	Copy-Item $source_directory\MvcSiteMapProvider\Web\Html\DisplayTemplates\* $display_templates_output -Recurse
 	
 	exec { 
-		&"$tools_directory\nuget\NuGet.exe" pack $build_directory\mvcsitemapprovider.web\mvcsitemapprovider.web.nuspec -Symbols -Version $packageVersion
+		&"$tools_directory\nuget\NuGet.exe" pack $build_directory\mvcsitemapprovider.web\mvcsitemapprovider.web.nuspec -Symbols -Version $packageVersion -OutputDirectory $output_directory
 	}
 }
 
@@ -258,7 +302,8 @@ function Create-DIContainer-Packages ([string[]] $di_containers) {
 		Write-Host $di_container -ForegroundColor Yellow
 
 		#exception: SimpleInjector version 2 doesn't support .NET 3.5
-		if ($di_container -ne "SimpleInjector") {
+		#exception: Grace doesn't support .NET 3.5
+		if ($di_container -ne "SimpleInjector" -and $di_container -ne "Grace") {
 			Create-DIContainer-Package $di_container ("net35", "net40", "net45") -mvc_version "2"
 			Create-DIContainer-Modules-Package $di_container ("net35", "net40", "net45") -mvc_version "2"
 		}
@@ -268,7 +313,7 @@ function Create-DIContainer-Packages ([string[]] $di_containers) {
 
 		Create-DIContainer-Package $di_container ("net40", "net45") -mvc_version "4"
 		Create-DIContainer-Modules-Package $di_container ("net40", "net45") -mvc_version "4"
-		
+
 		Create-DIContainer-Package $di_container ("net45") -mvc_version "5"
 		Create-DIContainer-Modules-Package $di_container ("net45") -mvc_version "5"
 	}
@@ -289,7 +334,7 @@ function Create-DIContainer-Package ([string] $di_container, [string[]] $net_ver
 
 	#package the build
 	exec { 
-		&"$tools_directory\nuget\NuGet.exe" pack $build_directory\mvcsitemapprovider.mvc$mvc_version.di.$di_container\mvcsitemapprovider.mvc$mvc_version.di.$di_container.nuspec -Symbols -Version $packageVersion
+		&"$tools_directory\nuget\NuGet.exe" pack $build_directory\mvcsitemapprovider.mvc$mvc_version.di.$di_container\mvcsitemapprovider.mvc$mvc_version.di.$di_container.nuspec -Symbols -Version $packageVersion -OutputDirectory $output_directory
 	}
 }
 
@@ -356,7 +401,7 @@ function Create-DIContainer-Modules-Package ([string] $di_container, [string[]] 
 
 	#package the build
 	exec { 
-		&"$tools_directory\nuget\NuGet.exe" pack $build_directory\mvcsitemapprovider.mvc$mvc_version.di.$di_container.modules\mvcsitemapprovider.mvc$mvc_version.di.$di_container.modules.nuspec -Symbols -Version $packageVersion
+		&"$tools_directory\nuget\NuGet.exe" pack $build_directory\mvcsitemapprovider.mvc$mvc_version.di.$di_container.modules\mvcsitemapprovider.mvc$mvc_version.di.$di_container.modules.nuspec -Symbols -Version $packageVersion -OutputDirectory $output_directory
 	}
 }
 
@@ -411,4 +456,18 @@ function Get-Prerelease-Text {
 		return ".0$prerelease"
 	}
 	return ""
+}
+
+function Get-TargetFramework-Version ([string] $net_version) {
+	$targetFramework = "v4.0"
+	if ($net_version -eq "net35") {
+		$targetFramework = "v3.5"
+	}
+	if ($net_version -eq "net40") {
+		$targetFramework = "v4.0"
+	}
+	if ($net_version -eq "net45") {
+		$targetFramework = "v4.5"
+	}
+	return $targetFramework
 }

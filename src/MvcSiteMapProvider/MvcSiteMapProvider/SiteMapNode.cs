@@ -77,17 +77,22 @@ namespace MvcSiteMapProvider
         protected readonly string key;
         protected readonly bool isDynamic;
         protected string httpMethod = HttpVerbs.Get.ToString().ToUpperInvariant();
-        protected string title = String.Empty;
-        protected string description = String.Empty;
-        protected string imageUrl = String.Empty;
+        protected string title = string.Empty;
+        protected string description = string.Empty;
+        protected string imageUrl = string.Empty;
         protected DateTime lastModifiedDate = DateTime.MinValue;
-        protected ChangeFrequency changeFrequency = ChangeFrequency.Always;
+        protected ChangeFrequency changeFrequency = ChangeFrequency.Undefined;
         protected UpdatePriority updatePriority = UpdatePriority.Undefined;
         protected bool clickable = true;
-        protected string url = String.Empty;
-        protected string resolvedUrl = String.Empty;
-        protected string canonicalUrl = String.Empty;
-        protected string canonicalKey = String.Empty;
+        protected string url = string.Empty;
+        protected string resolvedUrl = string.Empty;
+        protected string canonicalUrl = string.Empty;
+        protected string canonicalKey = string.Empty;
+
+        /// <summary>
+        /// Gets the current HTTP context.
+        /// </summary>
+        protected virtual HttpContextBase HttpContext { get { return this.mvcContextFactory.CreateHttpContext(); } }
 
         /// <summary>
         /// Gets the key.
@@ -184,9 +189,26 @@ namespace MvcSiteMapProvider
         /// <remarks>The image URL can be localized using a resource provider.</remarks>
         public override string ImageUrl 
         {
-            get { return localizationService.GetResourceString("imageUrl", this.imageUrl, this.SiteMap); }
+            get 
+            { 
+                var imageUrl = localizationService.GetResourceString("imageUrl", this.imageUrl, this.SiteMap);
+                return this.urlPath.ResolveContentUrl(imageUrl, this.ImageUrlProtocol, this.ImageUrlHostName);
+            }
             set { this.imageUrl = localizationService.ExtractExplicitResourceKey("imageUrl", value); }
         }
+
+        /// <summary>
+        /// Gets or sets the image URL protocol, such as http, https (optional).
+        /// If not provided, it will default to the protocol of the current request.
+        /// </summary>
+        /// <value>The protocol of the image URL.</value>
+        public override string ImageUrlProtocol { get; set; }
+
+        /// <summary>
+        /// Gets or sets the image URL host name, such as www.somewhere.com (optional).
+        /// </summary>
+        /// <value>The protocol of the image URL.</value>
+        public override string ImageUrlHostName { get; set; }
 
         /// <summary>
         /// Gets the attributes (optional).
@@ -248,7 +270,6 @@ namespace MvcSiteMapProvider
         /// <summary>
         /// Determines whether the node is visible.
         /// </summary>
-        /// <param name="context">The context.</param>
         /// <param name="sourceMetadata">The source metadata.</param>
         /// <returns>
         /// 	<c>true</c> if the specified node is visible; otherwise, <c>false</c>.
@@ -338,13 +359,6 @@ namespace MvcSiteMapProvider
                 {
                     return this.ResolvedUrl;
                 }
-                // Only resolve the url if an absolute url is not already set
-                // IMPORTANT: Must not call HasAbsoluteUrl here because that method calls this property.
-                var unresolved = this.UnresolvedUrl;
-                if (this.urlPath.IsAbsoluteUrl(unresolved))
-                {
-                    return unresolved;
-                }
                 return GetResolvedUrl();
             }
             set
@@ -374,8 +388,14 @@ namespace MvcSiteMapProvider
         /// </summary>
         public override void ResolveUrl()
         {
-            if (this.CacheResolvedUrl && string.IsNullOrEmpty(this.UnresolvedUrl) && 
-                this.preservedRouteParameters.Count == 0 && !this.RouteValues.ContainsCustomKeys)
+            var isProtocolOrHostNameFromRequest =
+                (!string.IsNullOrEmpty(this.Protocol) && (string.IsNullOrEmpty(this.HostName) || this.Protocol == "*"));
+
+            // NOTE: In all cases where values from the current request can be included in the URL, 
+            // we need to disable URL resolution caching.
+            if (this.CacheResolvedUrl && string.IsNullOrEmpty(this.UnresolvedUrl) &&
+                this.preservedRouteParameters.Count == 0 && !this.IncludeAmbientValuesInUrl &&
+                !isProtocolOrHostNameFromRequest)
             {
                 this.resolvedUrl = this.GetResolvedUrl();
             }
@@ -388,6 +408,26 @@ namespace MvcSiteMapProvider
             return pluginProvider.UrlResolverStrategy.ResolveUrl(
                 this.UrlResolver, this, this.Area, this.Controller, this.Action, this.RouteValues);
         }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to include ambient request values 
+        /// (from the RouteValues and/or query string) when resolving URLs.
+        /// </summary>
+        /// <value><b>true</b> to include ambient values (like MVC does); otherwise <b>false</b>.</value>
+        public override bool IncludeAmbientValuesInUrl { get; set; }
+
+        /// <summary>
+        /// Gets or sets the protocol, such as http or https that will 
+        /// be built into the URL.
+        /// </summary>
+        /// <value>The protocol.</value>
+        public override string Protocol { get; set; }
+
+        /// <summary>
+        /// Gets or sets the host name that will be built into the URL.
+        /// </summary>
+        /// <value>The host name.</value>
+        public override string HostName { get; set; }
 
         /// <summary>
         /// Gets a boolean value that indicates this is an external URL by checking whether it
@@ -407,23 +447,32 @@ namespace MvcSiteMapProvider
         /// <returns></returns>
         public override bool HasExternalUrl(HttpContextBase httpContext)
         {
-            if (!this.HasAbsoluteUrl())
-            {
-                return false;
-            }
-            Uri uri = null;
-            if (Uri.TryCreate(this.Url, UriKind.Absolute, out uri))
-            {
-                var isDifferentHost = !httpContext.Request.Url.DnsSafeHost.Equals(uri.DnsSafeHost);
-                var isDifferentApplication = !uri.AbsolutePath.StartsWith(httpContext.Request.ApplicationPath, StringComparison.InvariantCultureIgnoreCase);
-                return (isDifferentHost || isDifferentApplication);
-            }
-            return false;
+            return this.urlPath.IsExternalUrl(this.Url, httpContext);
         }
 
         #endregion
 
         #region Canonical Tag
+
+        /// <summary>
+        /// Gets or sets the canonical key. The key is used to reference another <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> to get the canonical URL.
+        /// </summary>
+        /// <remarks>May not be used in conjunction with CanonicalUrl. Only 1 canonical value is allowed.</remarks>
+        public override string CanonicalKey
+        {
+            get { return this.canonicalKey; }
+            set
+            {
+                if (!this.canonicalKey.Equals(value))
+                {
+                    if (!string.IsNullOrEmpty(value) && !string.IsNullOrEmpty(this.canonicalUrl))
+                    {
+                        throw new ArgumentException(string.Format(Resources.Messages.SiteMapNodeCanonicalValueAlreadySet, "CanonicalKey"), "CanonicalKey");
+                    }
+                    this.canonicalKey = value;
+                }
+            }
+        }
 
         /// <summary>
         /// Gets or sets the canonical URL.
@@ -434,12 +483,12 @@ namespace MvcSiteMapProvider
             get 
             { 
                 var absoluteCanonicalUrl = this.GetAbsoluteCanonicalUrl();
-                if (!String.IsNullOrEmpty(absoluteCanonicalUrl))
+                if (!string.IsNullOrEmpty(absoluteCanonicalUrl))
                 {
-                    var httpContext = mvcContextFactory.CreateHttpContext();
-                    if (absoluteCanonicalUrl.Equals(urlPath.UrlDecode(httpContext.Request.Url.AbsoluteUri)))
+                    var publicFacingUrl = this.urlPath.GetPublicFacingUrl(this.HttpContext);
+                    if (absoluteCanonicalUrl.Equals(this.urlPath.UrlDecode(publicFacingUrl.AbsoluteUri)))
                     {
-                        return String.Empty;
+                        return string.Empty;
                     }
                 }
                 return absoluteCanonicalUrl;
@@ -448,9 +497,9 @@ namespace MvcSiteMapProvider
             {
                 if (!this.canonicalUrl.Equals(value))
                 {
-                    if (!String.IsNullOrEmpty(this.canonicalKey))
+                    if (!string.IsNullOrEmpty(value) && !string.IsNullOrEmpty(this.canonicalKey))
                     {
-                        throw new ArgumentException(Resources.Messages.SiteMapNodeCanonicalValueAlreadySet, "CanonicalUrl");
+                        throw new ArgumentException(string.Format(Resources.Messages.SiteMapNodeCanonicalValueAlreadySet, "CanonicalUrl"), "CanonicalUrl");
                     }
                     this.canonicalUrl = value;
                 }
@@ -458,24 +507,16 @@ namespace MvcSiteMapProvider
         }
 
         /// <summary>
-        /// Gets or sets the canonical key. The key is used to reference another <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> to get the canonical URL.
+        /// Gets or sets the canonical URL protocol, such as http, https (optional).
         /// </summary>
-        /// <remarks>May not be used in conjunction with CanonicalUrl. Only 1 canonical value is allowed.</remarks>
-        public override string CanonicalKey 
-        {
-            get { return this.canonicalKey; }
-            set
-            {
-                if (!this.canonicalKey.Equals(value))
-                {
-                    if (!String.IsNullOrEmpty(this.canonicalUrl))
-                    {
-                        throw new ArgumentException(Resources.Messages.SiteMapNodeCanonicalValueAlreadySet, "CanonicalKey");
-                    }
-                    this.canonicalKey = value;
-                }
-            }
-        }
+        /// <value>The protocol of the image URL.</value>
+        public override string CanonicalUrlProtocol { get; set; }
+
+        /// <summary>
+        /// Gets or sets the canonical URL host name, such as www.somewhere.com (optional).
+        /// </summary>
+        /// <value>The protocol of the image URL.</value>
+        public override string CanonicalUrlHostName { get; set; }
 
         /// <summary>
         /// Gets the absolute value of the canonical URL, finding the value by 
@@ -485,29 +526,24 @@ namespace MvcSiteMapProvider
         protected virtual string GetAbsoluteCanonicalUrl()
         {
             var url = this.canonicalUrl;
-            if (!String.IsNullOrEmpty(url))
+            if (!string.IsNullOrEmpty(url))
             {
-                if (urlPath.IsAbsoluteUrl(url))
-                {
-                    return url;
-                }
-                return urlPath.MakeRelativeUrlAbsolute(url);
+                // Use HTTP if not provided to force an absolute URL to be built.
+                var protocol = string.IsNullOrEmpty(this.CanonicalUrlProtocol) ? Uri.UriSchemeHttp : this.CanonicalUrlProtocol;
+                return this.urlPath.ResolveUrl(url, protocol, this.CanonicalUrlHostName);
             }
             var key = this.canonicalKey;
-            if (!String.IsNullOrEmpty(key))
+            if (!string.IsNullOrEmpty(key))
             {
                 var node = this.SiteMap.FindSiteMapNodeFromKey(key);
                 if (node != null)
                 {
-                    url = node.Url;
-                    if (urlPath.IsAbsoluteUrl(url))
-                    {
-                        return url;
-                    }
-                    return urlPath.MakeRelativeUrlAbsolute(url);
+                    // Use HTTP if not provided to force an absolute URL to be built.
+                    var protocol = string.IsNullOrEmpty(node.Protocol) ? Uri.UriSchemeHttp : node.Protocol;
+                    return this.urlPath.ResolveUrl(node.Url, protocol, node.HostName);
                 }
             }
-            return String.Empty;
+            return string.Empty;
         }
 
         #endregion
@@ -521,7 +557,7 @@ namespace MvcSiteMapProvider
         public override IMetaRobotsValueCollection MetaRobotsValues { get { return this.metaRobotsValues; } }
 
         /// <summary>
-        /// Gets a string containing the preformatted comma delimited list of values that can be inserted into the
+        /// Gets a string containing the pre-formatted comma delimited list of values that can be inserted into the
         /// content attribute of the meta robots tag.
         /// </summary>
         public override string GetMetaRobotsContentString()
@@ -571,7 +607,6 @@ namespace MvcSiteMapProvider
         /// <value>The preserved route parameters.</value>
         public override IPreservedRouteParameterCollection PreservedRouteParameters { get { return this.preservedRouteParameters; } }
 
-
         /// <summary>
         /// Sets the preserved route parameters of the current request to the routeValues collection.
         /// </summary>
@@ -583,7 +618,7 @@ namespace MvcSiteMapProvider
         {
             if (this.PreservedRouteParameters.Count > 0)
             {
-                var requestContext = mvcContextFactory.CreateRequestContext();
+                var requestContext = this.mvcContextFactory.CreateRequestContext();
                 var routeDataValues = requestContext.RouteData.Values;
                 var queryStringValues = requestContext.HttpContext.Request.QueryString;
 
@@ -618,7 +653,6 @@ namespace MvcSiteMapProvider
             set { } 
         }
 
-
         /// <summary>
         /// Gets the route data associated with the current node.
         /// </summary>
@@ -626,7 +660,7 @@ namespace MvcSiteMapProvider
         /// <returns>The route data associated with the current node.</returns>
         public override RouteData GetRouteData(HttpContextBase httpContext)
         {
-            var routes = mvcContextFactory.GetRoutes();
+            var routes = this.mvcContextFactory.GetRoutes();
             RouteData routeData;
             if (!string.IsNullOrEmpty(this.Route))
             {
@@ -642,7 +676,7 @@ namespace MvcSiteMapProvider
         /// <summary>
         /// Determines whether this node matches the supplied route values.
         /// </summary>
-        /// <param name="routeValues">An IDictionary<string, object> of route values.</param>
+        /// <param name="routeValues">An <see cref="T:System.Collections.Generic.IDictionary{string, object}"/> of route values.</param>
         /// <returns><c>true</c> if the route matches this node's RouteValues collection; otherwise <c>false</c>.</returns>
         public override bool MatchesRoute(IDictionary<string, object> routeValues)
         {
@@ -654,7 +688,52 @@ namespace MvcSiteMapProvider
             if (!string.IsNullOrEmpty(this.UnresolvedUrl))
                 return false;
 
-            return this.RouteValues.MatchesRoute(routeValues);
+            // Check whether the configured host name matches (only if it is supplied).
+            if (!string.IsNullOrEmpty(this.HostName) && !this.urlPath.IsPublicHostName(this.HostName, this.HttpContext))
+                return false;
+
+            // Merge in any query string values from the current context that match keys with
+            // the route values configured in the current node (MVC doesn't automatically assign them 
+            // as route values). This allows matching on query string values, but only if they 
+            // are configured in the node.
+            var values = this.MergeRouteValuesAndNamedQueryStringValues(routeValues, this.RouteValues.Keys, this.HttpContext);
+
+            return this.RouteValues.MatchesRoute(values);
+        }
+
+        /// <summary>
+        /// Makes a copy of the passed in route values and merges in any query string parameters 
+        /// that are configured for the current node. This ensures query string parameters are only 
+        /// taken into consideration for the match.
+        /// </summary>
+        /// <param name="routeValues">The route values from the RouteData object.</param>
+        /// <param name="queryStringKeys">A list of keys of query string values to add to the route values if 
+        /// they exist in the current context.</param>
+        /// <param name="httpContext">The current HTTP context.</param>
+        /// <returns>A merged list of routeValues and query string values. Route values will take precedence 
+        /// over query string values in cases where both are specified.</returns>
+        protected virtual IDictionary<string, object> MergeRouteValuesAndNamedQueryStringValues(IDictionary<string, object> routeValues, ICollection<string> queryStringKeys, HttpContextBase httpContext)
+        {
+            // Make a copy of the routeValues. We only want to limit this to the scope of the current node.
+            var result = new Dictionary<string, object>(routeValues);
+
+            // Add any query string values from the current context
+            var queryStringValues = httpContext.Request.QueryString;
+
+            // QueryString collection might contain nullable keys
+            foreach (var key in queryStringValues.AllKeys)
+            {
+                // Copy the query string value as a route value if it doesn't already exist
+                // and the name is provided as a match. Note that route values will take
+                // precedence over query string parameters in cases of duplicates
+                // (unless the route value contains an empty value, then overwrite).
+                if (key != null && queryStringKeys.Contains(key) && (!result.ContainsKey(key) || string.IsNullOrEmpty(result[key].ToString())))
+                {
+                    result[key] = queryStringValues[key];
+                }
+            }
+
+            return result;
         }
 
         #endregion
@@ -706,6 +785,8 @@ namespace MvcSiteMapProvider
             node.Description = this.description; // Get protected member
             node.TargetFrame = this.TargetFrame;
             node.ImageUrl = this.ImageUrl;
+            node.ImageUrlProtocol = this.ImageUrlProtocol;
+            node.ImageUrlHostName = this.ImageUrlHostName;
             this.Attributes.CopyTo(node.Attributes);
             this.Roles.CopyTo(node.Roles);
             node.LastModifiedDate = this.LastModifiedDate;
@@ -716,14 +797,85 @@ namespace MvcSiteMapProvider
             node.UrlResolver = this.UrlResolver;
             node.Url = this.url; // Get protected member
             node.CacheResolvedUrl = this.CacheResolvedUrl;
-            node.CanonicalUrl = this.canonicalUrl; // Get protected member
+            node.IncludeAmbientValuesInUrl = this.IncludeAmbientValuesInUrl;
+            node.Protocol = this.Protocol;
+            node.HostName = this.HostName;
             node.CanonicalKey = this.CanonicalKey;
+            node.CanonicalUrl = this.canonicalUrl; // Get protected member
+            node.CanonicalUrlProtocol = this.CanonicalUrlProtocol;
+            node.CanonicalUrlHostName = this.CanonicalUrlHostName;
             this.MetaRobotsValues.CopyTo(node.MetaRobotsValues);
             node.DynamicNodeProvider = this.DynamicNodeProvider;
             node.Route = this.Route;
             this.RouteValues.CopyTo(node.RouteValues);
             this.PreservedRouteParameters.CopyTo(node.PreservedRouteParameters);
             // NOTE: Area, Controller, and Action are covered under RouteValues.
+        }
+
+        #endregion
+
+        #region IEquatable<ISiteMapNode> Members
+
+        public override bool Equals(ISiteMapNode node)
+        {
+            if (base.Equals((object)node))
+            {
+                return true;
+            }
+
+            if (node == null)
+            {
+                return false;
+            }
+
+            return this.Key.Equals(node.Key);
+        }
+
+        #endregion
+
+        #region System.Object Overrides
+
+        public override bool Equals(object obj)
+        {
+            ISiteMapNode node = obj as ISiteMapNode;
+            if (node == null)
+            {
+                return false;
+            }
+
+            return this.Equals(node);
+        }
+
+        public static bool operator ==(SiteMapNode node1, SiteMapNode node2)
+        {
+            // If both are null, or both are same instance, return true.
+            if (object.ReferenceEquals(node1, node2))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if (((object)node1 == null) || ((object)node2 == null))
+            {
+                return false;
+            }
+
+            return node1.Equals(node2);
+        }
+
+        public static bool operator !=(SiteMapNode node1, SiteMapNode node2)
+        {
+            return !(node1 == node2);
+        }
+
+        public override int GetHashCode()
+        {
+            return this.Key.GetHashCode();
+        }
+
+        public override string ToString()
+        {
+            return this.Key;
         }
 
         #endregion

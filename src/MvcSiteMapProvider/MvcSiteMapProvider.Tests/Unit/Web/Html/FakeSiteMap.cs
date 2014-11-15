@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Web;
 using System.Web.Mvc;
 using MvcSiteMapProvider.Web;
 using MvcSiteMapProvider.Collections.Specialized;
@@ -33,7 +34,6 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
         protected readonly bool visibilityAffectsDescendants;
         protected ISiteMapNode root;
         protected ISiteMapNode currentNode;
-
 
         #region ISiteMap Members
 
@@ -78,7 +78,7 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
             string key = node.Key;
             if (this.keyTable.ContainsKey(key))
             {
-                throw new InvalidOperationException(String.Format("Multiple nodes with identical key: {0}", key));
+                throw new InvalidOperationException(string.Format("Multiple nodes with identical key: {0}", key));
             }
             this.keyTable[key] = node;
             this.urlTable[url] = node;
@@ -390,6 +390,11 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
             get { throw new NotImplementedException(); }
         }
 
+        public string CombineUrl(params string[] uriParts)
+        {
+            throw new NotImplementedException();
+        }
+
         public string Combine(string basepath, string relative)
         {
             throw new NotImplementedException();
@@ -472,21 +477,89 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
             throw new NotImplementedException();
         }
 
+        public bool IsExternalUrl(string url, HttpContextBase httpContext)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool IsPublicHostName(string hostName, HttpContextBase httpContext)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string MakeUrlAbsolute(string url)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string MakeUrlAbsolute(string url, string baseUrl)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveVirtualApplicationToRootRelativeUrl(string url)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveUrl(string url)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveUrl(string url, string protocol)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveUrl(string url, string protocol, string hostName)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveUrl(string url, string protocol, string hostName, HttpContextBase httpContext)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveContentUrl(string url)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveContentUrl(string url, string protocol)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveContentUrl(string url, string protocol, string hostName)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string ResolveContentUrl(string url, string protocol, string hostName, HttpContextBase httpContext)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Uri GetPublicFacingUrl(HttpContextBase httpContext)
+        {
+            throw new NotImplementedException();
+        }
+
+        [Obsolete]
         public string MakeRelativeUrlAbsolute(string url)
         {
             throw new NotImplementedException();
         }
 
-        public string ResolveUrl(string originalUrl)
-        {
-            throw new NotImplementedException();
-        }
-
+        [Obsolete]
         public string ResolveServerUrl(string serverUrl, bool forceHttps)
         {
             throw new NotImplementedException();
         }
 
+        [Obsolete]
         public string ResolveServerUrl(string serverUrl)
         {
             throw new NotImplementedException();

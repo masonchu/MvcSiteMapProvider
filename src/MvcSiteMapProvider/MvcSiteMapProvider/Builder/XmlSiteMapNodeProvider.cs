@@ -60,7 +60,7 @@ namespace MvcSiteMapProvider.Builder
             else
             {
                 // Throw exception because XML was not defined
-                throw new MvcSiteMapException(String.Format(Resources.Messages.XmlSiteMapNodeProviderXmlNotDefined, helper.SiteMapCacheKey));
+                throw new MvcSiteMapException(string.Format(Resources.Messages.XmlSiteMapNodeProviderXmlNotDefined, helper.SiteMapCacheKey));
             }
 
             return result;
@@ -78,7 +78,7 @@ namespace MvcSiteMapProvider.Builder
             if (rootElement == null)
             {
                 // No root element - inform the user this isn't allowed.
-                throw new MvcSiteMapException(String.Format(Resources.Messages.XmlSiteMapNodeProviderRootNodeNotDefined, helper.SiteMapCacheKey));
+                throw new MvcSiteMapException(string.Format(Resources.Messages.XmlSiteMapNodeProviderRootNodeNotDefined, helper.SiteMapCacheKey));
             }
             // Add the root node
             var rootNode = GetRootNode(xml, rootElement, helper);
@@ -105,7 +105,6 @@ namespace MvcSiteMapProvider.Builder
             return GetSiteMapNodeFromXmlElement(rootElement, null, helper);
         }
 
-
         /// <summary>
         /// Recursively processes our XML document, parsing our siteMapNodes and dynamicNode(s).
         /// </summary>
@@ -124,7 +123,7 @@ namespace MvcSiteMapProvider.Builder
                 if (node.Name != xmlNameProvider.NodeName)
                 {
                     // If the current node is not one of the known node types throw and exception
-                    throw new MvcSiteMapException(String.Format(Resources.Messages.XmlSiteMapNodeProviderInvalidSiteMapElement, helper.SiteMapCacheKey));
+                    throw new MvcSiteMapException(string.Format(Resources.Messages.XmlSiteMapNodeProviderInvalidSiteMapElement, helper.SiteMapCacheKey));
                 }
 
                 var child = GetSiteMapNodeFromXmlElement(node, parentNode, helper);
@@ -176,7 +175,6 @@ namespace MvcSiteMapProvider.Builder
             return result;
         }
 
-
         /// <summary>
         /// Maps an XMLElement from the XML file to an MvcSiteMapNode.
         /// </summary>
@@ -195,7 +193,7 @@ namespace MvcSiteMapProvider.Builder
             var url = node.GetAttributeValue("url");
             var explicitKey = node.GetAttributeValue("key");
             var parentKey = parentNode == null ? "" : parentNode.Key;
-            var httpMethod = node.GetAttributeValueOrFallback("httpMethod", HttpVerbs.Get.ToString()).ToUpperInvariant();
+            var httpMethod = node.GetAttributeValueOrFallback("httpMethod", HttpVerbs.Get.ToString()).ToUpper();
             var clickable = bool.Parse(node.GetAttributeValueOrFallback("clickable", "true"));
             var title = node.GetAttributeValue("title");
             var implicitResourceKey = node.GetAttributeValue("resourceKey");
@@ -225,16 +223,23 @@ namespace MvcSiteMapProvider.Builder
             siteMapNode.VisibilityProvider = node.GetAttributeValue("visibilityProvider");
             siteMapNode.DynamicNodeProvider = node.GetAttributeValue("dynamicNodeProvider");
             siteMapNode.ImageUrl = node.GetAttributeValue("imageUrl");
+            siteMapNode.ImageUrlProtocol = node.GetAttributeValue("imageUrlProtocol");
+            siteMapNode.ImageUrlHostName = node.GetAttributeValue("imageUrlHostName");
             siteMapNode.TargetFrame = node.GetAttributeValue("targetFrame");
             siteMapNode.HttpMethod = httpMethod;
             siteMapNode.Url = url;
             siteMapNode.CacheResolvedUrl = bool.Parse(node.GetAttributeValueOrFallback("cacheResolvedUrl", "true"));
-            siteMapNode.CanonicalUrl = node.GetAttributeValue("canonicalUrl");
+            siteMapNode.IncludeAmbientValuesInUrl = bool.Parse(node.GetAttributeValueOrFallback("includeAmbientValuesInUrl", "false"));
+            siteMapNode.Protocol = node.GetAttributeValue("protocol");
+            siteMapNode.HostName = node.GetAttributeValue("hostName");
             siteMapNode.CanonicalKey = node.GetAttributeValue("canonicalKey");
+            siteMapNode.CanonicalUrl = node.GetAttributeValue("canonicalUrl");
+            siteMapNode.CanonicalUrlProtocol = node.GetAttributeValue("canonicalUrlProtocol");
+            siteMapNode.CanonicalUrlHostName = node.GetAttributeValue("canonicalUrlHostName");
             siteMapNode.MetaRobotsValues.AddRange(node.GetAttributeValue("metaRobotsValues"), new[] { ' ' });
             siteMapNode.ChangeFrequency = (ChangeFrequency)Enum.Parse(typeof(ChangeFrequency), node.GetAttributeValueOrFallback("changeFrequency", "Undefined"));
             siteMapNode.UpdatePriority = (UpdatePriority)Enum.Parse(typeof(UpdatePriority), node.GetAttributeValueOrFallback("updatePriority", "Undefined"));
-            siteMapNode.LastModifiedDate = DateTime.Parse(node.GetAttributeValueOrFallback("lastModifiedDate", DateTime.MinValue.ToString()), CultureInfo.InvariantCulture);
+            siteMapNode.LastModifiedDate = DateTime.Parse(node.GetAttributeValueOrFallback("lastModifiedDate", DateTime.MinValue.ToString()));
             siteMapNode.Order = int.Parse(node.GetAttributeValueOrFallback("order", "0"));
 
             // Handle route details
@@ -242,7 +247,7 @@ namespace MvcSiteMapProvider.Builder
             siteMapNode.RouteValues.AddRange(node, false);
             siteMapNode.PreservedRouteParameters.AddRange(node.GetAttributeValue("preservedRouteParameters"), new[] { ',', ';' });
             siteMapNode.UrlResolver = node.GetAttributeValue("urlResolver");
-
+            
             // Area and controller may need inheriting from the parent node, so set (or reset) them explicitly
             siteMapNode.Area = area;
             siteMapNode.Controller = controller;
@@ -253,7 +258,7 @@ namespace MvcSiteMapProvider.Builder
             {
                 var item = inheritedRouteParameter.Trim();
                 if (node.Attribute(item) != null)
-                    throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeSameKeyInRouteValueAndInheritedRouteParameter, key, title, item));
+                    throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeSameKeyInRouteValueAndInheritedRouteParameter, key, title, item));
 
                 if (parentNode.RouteValues.ContainsKey(item))
                 {

@@ -180,6 +180,10 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
 
         public string ImageUrl { get; set; }
 
+        public string ImageUrlProtocol { get; set; }
+
+        public string ImageUrlHostName { get; set; }
+
         public IAttributeDictionary Attributes
         {
             get { return this.attributes; }
@@ -248,6 +252,12 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
             throw new NotImplementedException();
         }
 
+        public bool IncludeAmbientValuesInUrl { get; set; }
+
+        public string Protocol { get; set; }
+
+        public string HostName { get; set; }
+
         public bool HasAbsoluteUrl()
         {
             throw new NotImplementedException();
@@ -258,9 +268,13 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
             throw new NotImplementedException();
         }
 
+        public string CanonicalKey { get; set; }
+
         public string CanonicalUrl { get; set; }
 
-        public string CanonicalKey { get; set; }
+        public string CanonicalUrlProtocol { get; set; }
+
+        public string CanonicalUrlHostName { get; set; }
 
         public IMetaRobotsValueCollection MetaRobotsValues
         {
@@ -308,6 +322,16 @@ namespace MvcSiteMapProvider.Tests.Unit.Web.Html
         public void CopyTo(ISiteMapNode node)
         {
             throw new NotImplementedException();
+        }
+
+        public bool Equals(ISiteMapNode node)
+        {
+            if (base.Equals(node))
+            {
+                return true;
+            }
+
+            return this.Key.Equals(node.Key);
         }
 
         #endregion

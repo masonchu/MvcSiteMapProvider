@@ -128,9 +128,9 @@ namespace MvcSiteMapProvider.Collections.Specialized
         }
 
         /// <summary>
-        /// Adds each element of a <see cref="System.Collections.Generic.IEnumerable{string}"/> to the collection as a new meta robots value. Duplicates will be ignored.
+        /// Adds each element of a <see cref="T:System.Collections.Generic.IEnumerable{string}"/> to the collection as a new meta robots value. Duplicates will be ignored.
         /// </summary>
-        /// <param name="collection">The <see cref="System.Collections.Generic.IEnumerable{string}"/> containing the values to add, or <b>null</b>.</param>
+        /// <param name="collection">The <see cref="T:System.Collections.Generic.IEnumerable{string}"/> containing the values to add, or <b>null</b>.</param>
         public override void AddRange(IEnumerable<string> collection)
         {
             if (collection != null)
@@ -164,8 +164,8 @@ namespace MvcSiteMapProvider.Collections.Specialized
 
         public virtual string GetMetaRobotsContentString()
         {
-            if (this.HasDefaultValue) return String.Empty;
-            string result = String.Empty;
+            if (this.HasDefaultValue) return string.Empty;
+            string result = string.Empty;
             bool first = true;
             foreach (var item in this)
             {
@@ -207,59 +207,59 @@ namespace MvcSiteMapProvider.Collections.Specialized
                 case "index":
                     if (this.Contains("noindex"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueIndexAmbiguous, "noindex"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueIndexAmbiguous, "noindex"));
                     }
                     if (this.Contains("none"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
                     }
                     break;
                 case "noindex":
                     if (this.Contains("index"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueIndexAmbiguous, "index"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueIndexAmbiguous, "index"));
                     }
                     if (this.Contains("none"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
                     }
                     break;
                 case "follow":
                     if (this.Contains("nofollow"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueFollowAmbiguous, "nofollow"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueFollowAmbiguous, "nofollow"));
                     }
                     if (this.Contains("none"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
                     }
                     break;
                 case "nofollow":
                     if (this.Contains("follow"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueFollowAmbiguous, "follow"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueFollowAmbiguous, "follow"));
                     }
                     if (this.Contains("none"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "none"));
                     }
                     break;
                 case "none":
                     if (this.Contains("index"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "index"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "index"));
                     }
                     if (this.Contains("noindex"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "noindex"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "noindex"));
                     }
                     if (this.Contains("follow"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "follow"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "follow"));
                     }
                     if (this.Contains("nofollow"))
                     {
-                        throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "nofollow"));
+                        throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueNoneAmbiguous, "nofollow"));
                     }
                     break;
                 case "noarchive":
@@ -271,7 +271,7 @@ namespace MvcSiteMapProvider.Collections.Specialized
                     // Do nothing - these are valid
                     break;
                 default:
-                    throw new ArgumentException(String.Format(Resources.Messages.MetaRobotsValueUnrecognized, item));
+                    throw new ArgumentException(string.Format(Resources.Messages.MetaRobotsValueUnrecognized, item));
 
                 // For information on these values, see http://yoast.com/articles/robots-meta-tags/
             }

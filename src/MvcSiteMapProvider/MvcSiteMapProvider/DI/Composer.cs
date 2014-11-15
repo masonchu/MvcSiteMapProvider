@@ -8,16 +8,11 @@ using MvcSiteMapProvider.Web.Mvc;
 using System.Web.WebPages.Razor;
 #endif
 
-#if !NET35
-// Startup using WebActivatorEx (which allows multiple things to be started up, as opposed to the System.Web version).
-    [assembly: WebActivatorEx.PostApplicationStartMethod(typeof(MvcSiteMapProvider.DI.Composer), "Compose")]
-#endif
-
 namespace MvcSiteMapProvider.DI
 {
     /// <summary>
     /// This is the default dependency injection composer for the MvcSiteMapProvider that is fired automatically
-    /// using a <see cref="WebActivatorEx.PostApplicationStartMethodAttribute"/> during application startup.
+    /// using a WebActivatorEx.PostApplicationStartMethodAttribute during application startup.
     /// </summary>
     public class Composer
     {

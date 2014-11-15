@@ -4,6 +4,7 @@ using System.Web.Hosting;
 using MvcSiteMapProvider.Builder;
 using MvcSiteMapProvider.Caching;
 using MvcSiteMapProvider.Collections.Specialized;
+using MvcSiteMapProvider.Globalization;
 using MvcSiteMapProvider.Loader;
 using MvcSiteMapProvider.Reflection;
 using MvcSiteMapProvider.Visitor;
@@ -34,7 +35,9 @@ namespace MvcSiteMapProvider.DI
 #endif
             this.cacheDependency = this.ResolveCacheDependency(settings);
             this.requestCache = this.mvcContextFactory.GetRequestCache();
-            this.urlPath = new UrlPath(this.mvcContextFactory);
+            this.bindingFactory = new BindingFactory();
+            this.bindingProvider = new BindingProvider(this.bindingFactory, this.mvcContextFactory);
+            this.urlPath = new UrlPath(this.mvcContextFactory, this.bindingProvider);
             this.siteMapCacheKeyGenerator = new SiteMapCacheKeyGenerator(this.mvcContextFactory);
             this.siteMapCacheKeyToBuilderSetMapper = new SiteMapCacheKeyToBuilderSetMapper();
             this.reservedAttributeNameProvider = new ReservedAttributeNameProvider(settings.AttributesToIgnore);
@@ -43,7 +46,8 @@ namespace MvcSiteMapProvider.DI
             this.nodeKeyGenerator = new NodeKeyGenerator();
             this.siteMapNodeFactory = siteMapNodeFactoryContainer.ResolveSiteMapNodeFactory();
             this.siteMapNodeCreatorFactory = this.ResolveSiteMapNodeCreatorFactory();
-            this.dynamicSiteMapNodeBuilderFactory = new DynamicSiteMapNodeBuilderFactory(this.siteMapNodeCreatorFactory);
+            this.cultureContextFactory = new CultureContextFactory();
+            this.dynamicSiteMapNodeBuilderFactory = new DynamicSiteMapNodeBuilderFactory(this.siteMapNodeCreatorFactory, this.cultureContextFactory);
             this.siteMapHierarchyBuilder = new SiteMapHierarchyBuilder();
             this.siteMapNodeHelperFactory = this.ResolveSiteMapNodeHelperFactory();
             this.siteMapNodeVisitor = this.ResolveSiteMapNodeVisitor(settings);
@@ -59,6 +63,8 @@ namespace MvcSiteMapProvider.DI
 
         private readonly string absoluteFileName;
         private readonly IMvcContextFactory mvcContextFactory;
+        private readonly IBindingFactory bindingFactory;
+        private readonly IBindingProvider bindingProvider;
         private readonly ISiteMapCache siteMapCache;
         private readonly ICacheDependency cacheDependency;
         private readonly IRequestCache requestCache;
@@ -76,6 +82,7 @@ namespace MvcSiteMapProvider.DI
         private readonly ISiteMapHierarchyBuilder siteMapHierarchyBuilder;
         private readonly IAttributeAssemblyProviderFactory attributeAssemblyProviderFactory;
         private readonly IMvcSiteMapNodeAttributeDefinitionProvider mvcSiteMapNodeAttributeDefinitionProvider;
+        private readonly ICultureContextFactory cultureContextFactory;
         private readonly ISiteMapXmlNameProvider siteMapXmlNameProvider;
         private readonly IReservedAttributeNameProvider reservedAttributeNameProvider;
         private readonly IDynamicSiteMapNodeBuilderFactory dynamicSiteMapNodeBuilderFactory;
@@ -113,7 +120,8 @@ namespace MvcSiteMapProvider.DI
                 this.siteMapNodeProvider,
                 this.siteMapNodeVisitor,
                 this.siteMapHierarchyBuilder,
-                this.siteMapNodeHelperFactory);
+                this.siteMapNodeHelperFactory,
+                this.cultureContextFactory);
         }
 
         private ISiteMapNodeProvider ResolveSiteMapNodeProvider(ConfigurationSettings settings)
@@ -173,7 +181,8 @@ namespace MvcSiteMapProvider.DI
             return new SiteMapNodeHelperFactory(
                 this.siteMapNodeCreatorFactory,
                 this.dynamicSiteMapNodeBuilderFactory,
-                this.reservedAttributeNameProvider);
+                this.reservedAttributeNameProvider,
+                this.cultureContextFactory);
         }
 
         private ICacheDetails ResolveCacheDetails(ConfigurationSettings settings)

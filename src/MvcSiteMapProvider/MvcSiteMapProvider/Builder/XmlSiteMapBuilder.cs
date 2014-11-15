@@ -150,12 +150,19 @@ namespace MvcSiteMapProvider.Builder
             siteMapNode.VisibilityProvider = node.GetAttributeValue("visibilityProvider");
             siteMapNode.DynamicNodeProvider = node.GetAttributeValue("dynamicNodeProvider");
             siteMapNode.ImageUrl = node.GetAttributeValue("imageUrl");
+            siteMapNode.ImageUrlProtocol = node.GetAttributeValue("imageUrlProtocol");
+            siteMapNode.ImageUrlHostName = node.GetAttributeValue("imageUrlHostName");
             siteMapNode.TargetFrame = node.GetAttributeValue("targetFrame");
             siteMapNode.HttpMethod = httpMethod;
             siteMapNode.Url = url;
             siteMapNode.CacheResolvedUrl = bool.Parse(node.GetAttributeValueOrFallback("cacheResolvedUrl", "true"));
-            siteMapNode.CanonicalUrl = node.GetAttributeValue("canonicalUrl");
+            siteMapNode.IncludeAmbientValuesInUrl = bool.Parse(node.GetAttributeValueOrFallback("includeAmbientValuesInUrl", "false"));
+            siteMapNode.Protocol = node.GetAttributeValue("protocol");
+            siteMapNode.HostName = node.GetAttributeValue("hostName");
             siteMapNode.CanonicalKey = node.GetAttributeValue("canonicalKey");
+            siteMapNode.CanonicalUrl = node.GetAttributeValue("canonicalUrl");
+            siteMapNode.CanonicalUrlProtocol = node.GetAttributeValue("canonicalUrlProtocol");
+            siteMapNode.CanonicalUrlHostName = node.GetAttributeValue("canonicalUrlHostName");
             siteMapNode.MetaRobotsValues.AddRange(node.GetAttributeValue("metaRobotsValues"), new[] { ' ' });
             siteMapNode.ChangeFrequency = (ChangeFrequency)Enum.Parse(typeof(ChangeFrequency), node.GetAttributeValueOrFallback("changeFrequency", "Undefined"));
             siteMapNode.UpdatePriority = (UpdatePriority)Enum.Parse(typeof(UpdatePriority), node.GetAttributeValueOrFallback("updatePriority", "Undefined"));
@@ -169,7 +176,7 @@ namespace MvcSiteMapProvider.Builder
             siteMapNode.RouteValues.AddRange(node, false);
             siteMapNode.PreservedRouteParameters.AddRange(node.GetAttributeValue("preservedRouteParameters"), new[] { ',', ';' });
             siteMapNode.UrlResolver = node.GetAttributeValue("urlResolver");
-
+            
             // Area and controller may need inheriting from the parent node, so set (or reset) them explicitly
             siteMapNode.Area = area;
             siteMapNode.Controller = controller;

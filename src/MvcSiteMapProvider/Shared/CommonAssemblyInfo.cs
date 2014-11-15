@@ -11,4 +11,3 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyInformationalVersionAttribute("4.0.0")]
 [assembly: AssemblyFileVersionAttribute("4.0.0")]
 [assembly: AssemblyDelaySignAttribute(false)]
-

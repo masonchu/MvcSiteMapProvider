@@ -157,7 +157,7 @@ namespace MvcSiteMapProvider.Builder
                 throw new ArgumentNullException("type");
             }
 
-            if (!String.IsNullOrEmpty(attribute.SiteMapCacheKey))
+            if (!string.IsNullOrEmpty(attribute.SiteMapCacheKey))
             {
                 // Return null if the attribute doesn't apply to this cache key
                 if (!helper.SiteMapCacheKey.Equals(attribute.SiteMapCacheKey))
@@ -182,16 +182,16 @@ namespace MvcSiteMapProvider.Builder
             }
 
             string area = "";
-            if (!String.IsNullOrEmpty(attribute.AreaName))
+            if (!string.IsNullOrEmpty(attribute.AreaName))
             {
                 area = attribute.AreaName;
             }
-            if (String.IsNullOrEmpty(area) && !String.IsNullOrEmpty(attribute.Area))
+            if (string.IsNullOrEmpty(area) && !string.IsNullOrEmpty(attribute.Area))
             {
                 area = attribute.Area;
             }
             // Determine area (will only work if controller is defined as [<Anything>.]Areas.<Area>.Controllers.<AnyController>)
-            if (String.IsNullOrEmpty(area))
+            if (string.IsNullOrEmpty(area))
             {
                 var m = Regex.Match(type.Namespace, @"(?:[^\.]+\.|\s+|^)Areas\.(?<areaName>[^\.]+)\.Controllers");
                 if (m.Success)
@@ -214,7 +214,7 @@ namespace MvcSiteMapProvider.Builder
                 }
             }
 
-            string httpMethod = String.IsNullOrEmpty(attribute.HttpMethod) ? HttpVerbs.Get.ToString().ToUpperInvariant() : attribute.HttpMethod.ToUpperInvariant();
+            string httpMethod = (string.IsNullOrEmpty(attribute.HttpMethod) ? HttpVerbs.Get.ToString() : attribute.HttpMethod).ToUpper();
 
             // Handle title
             var title = attribute.Title;
@@ -244,14 +244,21 @@ namespace MvcSiteMapProvider.Builder
             node.VisibilityProvider = attribute.VisibilityProvider;
             node.DynamicNodeProvider = attribute.DynamicNodeProvider;
             node.ImageUrl = attribute.ImageUrl;
+            node.ImageUrlProtocol = attribute.ImageUrlProtocol;
+            node.ImageUrlHostName = attribute.ImageUrlHostName;
             node.TargetFrame = attribute.TargetFrame;
             node.HttpMethod = httpMethod;
             if (!string.IsNullOrEmpty(attribute.Url)) node.Url = attribute.Url;
             node.CacheResolvedUrl = attribute.CacheResolvedUrl;
-            node.CanonicalUrl = attribute.CanonicalUrl;
+            node.IncludeAmbientValuesInUrl = attribute.IncludeAmbientValuesInUrl;
+            node.Protocol = attribute.Protocol;
+            node.HostName = attribute.HostName;
             node.CanonicalKey = attribute.CanonicalKey;
+            node.CanonicalUrl = attribute.CanonicalUrl;
+            node.CanonicalUrlProtocol = attribute.CanonicalUrlProtocol;
+            node.CanonicalUrlHostName = attribute.CanonicalUrlHostName;
             node.MetaRobotsValues.AddRange(attribute.MetaRobotsValues);
-            node.LastModifiedDate = string.IsNullOrEmpty(attribute.LastModifiedDate) ? DateTime.MinValue : DateTime.Parse(attribute.LastModifiedDate, CultureInfo.InvariantCulture);
+            node.LastModifiedDate = string.IsNullOrEmpty(attribute.LastModifiedDate) ? DateTime.MinValue : DateTime.Parse(attribute.LastModifiedDate);
             node.ChangeFrequency = attribute.ChangeFrequency;
             node.UpdatePriority = attribute.UpdatePriority;
             node.Order = attribute.Order;
@@ -261,7 +268,7 @@ namespace MvcSiteMapProvider.Builder
             node.RouteValues.AddRange(attribute.Attributes, false);
             node.PreservedRouteParameters.AddRange(attribute.PreservedRouteParameters, new[] { ',', ';' });
             node.UrlResolver = attribute.UrlResolver;
-
+            
             // Specified area, controller and action properties will override any 
             // provided in the attributes collection.
             if (!string.IsNullOrEmpty(area)) node.RouteValues.Add("area", area);

@@ -1,16 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Web;
 using System.Web.UI;
 using System.Web.Mvc;
 using System.Web.Routing;
+using MvcSiteMapProvider.Collections.Specialized;
 using MvcSiteMapProvider.DI;
+using MvcSiteMapProvider.Matching;
 using MvcSiteMapProvider.Reflection;
 using MvcSiteMapProvider.Text;
 using MvcSiteMapProvider.Web;
 using MvcSiteMapProvider.Web.Mvc;
-using MvcSiteMapProvider.Collections.Specialized;
+using MvcSiteMapProvider.Web.Routing;
 
 namespace MvcSiteMapProvider
 {
@@ -58,19 +61,24 @@ namespace MvcSiteMapProvider
             this.urlTable = siteMapChildStateFactory.CreateUrlDictionary();
         }
 
+        // TODO: In version 5, we should refactor this into separate services that each manage a single dictionary
+        // and hide those services behind a facade service so there isn't so many responsibilities in this class.
+        // This will help the process of eliminating child state factory and plugin provider which only serve to 
+        // reduce the number of dependencies in this class, but technically are providing unrelated services.
+
         // Services
         protected readonly ISiteMapPluginProvider pluginProvider;
         protected readonly IMvcContextFactory mvcContextFactory;
         protected readonly ISiteMapChildStateFactory siteMapChildStateFactory;
         protected readonly IUrlPath urlPath;
         private readonly ISiteMapSettings siteMapSettings;
-
+      
         // Child collections
         protected readonly IDictionary<ISiteMapNode, ISiteMapNodeCollection> childNodeCollectionTable;
         protected readonly IDictionary<string, ISiteMapNode> keyTable;
         protected readonly IDictionary<ISiteMapNode, ISiteMapNode> parentNodeTable;
-        protected readonly IDictionary<string, ISiteMapNode> urlTable;
-
+        protected readonly IDictionary<IUrlKey, ISiteMapNode> urlTable;
+    
         // Object state
         protected readonly object synclock = new object();
         protected ISiteMapNode root;
@@ -111,24 +119,11 @@ namespace MvcSiteMapProvider
             {
                 throw new ArgumentNullException("node");
             }
-            AssertSiteMapNodeConfigurationIsValid(node);
 
-            // Avoid issue with url table not clearing correctly.
-            if (this.FindSiteMapNode(node.Url) != null)
-            {
-                this.RemoveNode(node);
-            }
+            this.AssertSiteMapNodeConfigurationIsValid(node);
 
             // Add the node
-            try
-            {
-                AddNodeInternal(node, parentNode);
-            }
-            catch
-            {
-                if (parentNode != null) this.RemoveNode(parentNode);
-                AddNodeInternal(node, parentNode);
-            }
+            this.AddNodeInternal(node, parentNode);
         }
 
         protected virtual void AddNodeInternal(ISiteMapNode node, ISiteMapNode parentNode)
@@ -139,54 +134,41 @@ namespace MvcSiteMapProvider
             }
             lock (this.synclock)
             {
-                string url = string.Empty;
-                bool urlPrepared = false;
-                bool urlEncoded = false;
-                bool isMvcUrl = string.IsNullOrEmpty(node.UnresolvedUrl) && this.UsesDefaultUrlResolver(node);
-                
-                // Only store URLs if they are configured using the Url property
-                // or provided by a custom Url resolver.
-                if (!isMvcUrl)
-                {
-                    url = node.Url;
+                IUrlKey url = null;
+                bool isMvcUrl = string.IsNullOrEmpty(node.UnresolvedUrl) && node.UsesDefaultUrlResolver();
 
-                    if (!string.IsNullOrEmpty(url))
+                // Only store URLs if they are clickable and are configured using the Url
+                // property or provided by a custom URL resolver.
+                if (!isMvcUrl && node.Clickable)
+                {
+                    url = this.siteMapChildStateFactory.CreateUrlKey(node);
+
+                    // Check for duplicates (including matching or empty host names).
+                    if (this.urlTable
+                        .Where(k => string.Equals(k.Key.RootRelativeUrl, url.RootRelativeUrl, StringComparison.OrdinalIgnoreCase))
+                        .Where(k => string.IsNullOrEmpty(k.Key.HostName) || string.IsNullOrEmpty(url.HostName) || string.Equals(k.Key.HostName, url.HostName, StringComparison.OrdinalIgnoreCase))
+                        .Count() > 0)
                     {
-                        if (urlPath.AppDomainAppVirtualPath != null)
-                        {
-                            if (node.HasAbsoluteUrl())
-                            {
-                                // This is an external url, so we will encode it
-                                url = urlPath.UrlEncode(url);
-                                urlEncoded = true;
-                            }
-                            if (!urlPath.IsAbsolutePhysicalPath(url))
-                            {
-                                url = urlPath.MakeVirtualPathAppAbsolute(urlPath.Combine(urlPath.AppDomainAppVirtualPath, url));
-                            }
-                            if (this.urlTable.Keys.Contains(url, StringComparer.OrdinalIgnoreCase))
-                            {
-                                if (urlEncoded)
-                                {
-                                    url = urlPath.UrlDecode(url);
-                                }
-                                throw new InvalidOperationException(String.Format(Resources.Messages.MultipleNodesWithIdenticalUrl, url));
-                            }
-                        }
-                        urlPrepared = true;
+                        var absoluteUrl = this.urlPath.ResolveUrl(node.UnresolvedUrl, string.IsNullOrEmpty(node.Protocol) ? Uri.UriSchemeHttp : node.Protocol, node.HostName);
+                        throw new InvalidOperationException(string.Format(Resources.Messages.MultipleNodesWithIdenticalUrl, absoluteUrl));
                     }
                 }
 
+                // Add the key
                 string key = node.Key;
                 if (this.keyTable.ContainsKey(key))
                 {
-                    throw new InvalidOperationException(String.Format(Resources.Messages.MultipleNodesWithIdenticalKey, key));
+                    throw new InvalidOperationException(string.Format(Resources.Messages.MultipleNodesWithIdenticalKey, key));
                 }
                 this.keyTable[key] = node;
-                if (urlPrepared)
+
+                // Add the URL
+                if (url != null)
                 {
                     this.urlTable[url] = node;
                 }
+
+                // Add the parent-child relationship
                 if (parentNode != null)
                 {
                     this.parentNodeTable[node] = parentNode;
@@ -207,12 +189,15 @@ namespace MvcSiteMapProvider
             }
             lock (this.synclock)
             {
+                // Remove the parent node relationship
                 ISiteMapNode parentNode = null;
                 if (this.parentNodeTable.ContainsKey(node))
                 {
                     parentNode = this.parentNodeTable[node];
                     this.parentNodeTable.Remove(node);
                 }
+
+                // Remove the child node relationship
                 if (parentNode != null)
                 {
                     var nodes = this.childNodeCollectionTable[parentNode];
@@ -221,11 +206,15 @@ namespace MvcSiteMapProvider
                         nodes.Remove(node);
                     }
                 }
-                string url = node.Url;
-                if (((url != null) && (url.Length > 0)) && this.urlTable.ContainsKey(url))
+
+                // Remove the URL
+                var url = this.siteMapChildStateFactory.CreateUrlKey(node);
+                if (this.urlTable.ContainsKey(url))
                 {
                     this.urlTable.Remove(url);
                 }
+
+                // Remove the key
                 string key = node.Key;
                 if (this.keyTable.ContainsKey(key))
                 {
@@ -292,6 +281,13 @@ namespace MvcSiteMapProvider
             get { return this.siteMapSettings.EnableLocalization; }
         }
 
+        /// <summary>
+        /// Retrieves a <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> object that represents the page at the specified URL.
+        /// </summary>
+        /// <param name="rawUrl">A URL that identifies the page for which to retrieve a <see cref="T:MvcSiteMapProvider.ISiteMapNode"/>.</param>
+        /// <returns>A <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> that represents the page identified by rawURL; otherwise, <b>null</b>, 
+        /// if no corresponding <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> is found or if security trimming is enabled and the 
+        /// <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> cannot be returned for the current user.</returns>
         public virtual ISiteMapNode FindSiteMapNode(string rawUrl)
         {
             if (rawUrl == null)
@@ -303,27 +299,44 @@ namespace MvcSiteMapProvider
             {
                 return null;
             }
-            if (urlPath.IsAppRelativePath(rawUrl))
+
+            // NOTE: If the URL passed is absolute, the public facing URL will be ignored
+            // and the current URL will be the absolute URL that is passed.
+            var publicFacingUrl = this.urlPath.GetPublicFacingUrl(this.HttpContext);
+            var currentUrl = new Uri(publicFacingUrl, rawUrl);
+
+            // Search the internal dictionary for the URL that is registered manually.
+            var node = this.FindSiteMapNodeFromUrl(currentUrl.PathAndQuery, currentUrl.AbsolutePath, currentUrl.Host, HttpContext.CurrentHandler);
+
+            // Search for the URL by creating a context based on the new URL and matching route values.
+            if (node == null)
             {
-                rawUrl = urlPath.MakeVirtualPathAppAbsolute(rawUrl);
+                // Create a TextWriter with null stream as a backing stream 
+                // which doesn't consume resources
+                using (var nullWriter = new StreamWriter(Stream.Null))
+                {
+                    // Create a new HTTP context using the current URL.
+                    var currentUrlHttpContext = this.mvcContextFactory.CreateHttpContext(null, currentUrl, nullWriter);
+
+                    // Find node for the passed-in URL using the new HTTP context. This will do a
+                    // match based on route values and/or query string values.
+                    node = this.FindSiteMapNodeFromMvc(currentUrlHttpContext);
+                }
             }
-            if (this.urlTable.ContainsKey(rawUrl))
-            {
-                return this.ReturnNodeIfAccessible(this.urlTable[rawUrl]);
-            }
-            return null;
+
+            return this.ReturnNodeIfAccessible(node);
         }
 
         /// <summary>
         /// Retrieves a <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> object that represents the currently requested page using the current <see cref="T:System.Web.HttpContext"/> object.
         /// </summary>
         /// <returns>
-        /// A <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> that represents the currently requested page; otherwise, null, if no corresponding <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> can be found in the <see cref="T:MvcSiteMapProvider.SiteMapNode"/> or if the page context is null.
+        /// A <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> that represents the currently requested page; otherwise, <b>null</b>, 
+        /// if no corresponding <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> can be found in the <see cref="T:MvcSiteMapProvider.SiteMapNode"/> or if the page context is null.
         /// </returns>
         public virtual ISiteMapNode FindSiteMapNodeFromCurrentContext()
         {
-            var httpContext = mvcContextFactory.CreateHttpContext();
-            return FindSiteMapNode(httpContext);
+            return FindSiteMapNode(this.HttpContext);
         }
 
         /// <summary>
@@ -336,10 +349,17 @@ namespace MvcSiteMapProvider
             return this.FindSiteMapNode(context.HttpContext);
         }
 
+        /// <summary>
+        /// Retrieves a <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> object based on a specified key.
+        /// </summary>
+        /// <param name="key">A lookup key with which a <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> instance is created.</param>
+        /// <returns>A <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> that represents the page identified by key; otherwise, <b>null</b>, 
+        /// if no corresponding <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> is found or if security trimming is enabled and the 
+        /// <see cref="T:MvcSiteMapProvider.ISiteMapNode"/> cannot be returned for the current user. The default is null.</returns>
         public virtual ISiteMapNode FindSiteMapNodeFromKey(string key)
         {
-            ISiteMapNode node = this.FindSiteMapNode(key);
-            if (node == null && this.keyTable.ContainsKey(key))
+            ISiteMapNode node = null;
+            if (this.keyTable.ContainsKey(key))
             {
                 node = this.keyTable[key];
             }
@@ -440,7 +460,6 @@ namespace MvcSiteMapProvider
                 throw new ArgumentOutOfRangeException("downLevel");
             }
             return this.CurrentNode;
-
         }
 
         public virtual ISiteMapNode GetParentNode(ISiteMapNode node)
@@ -558,12 +577,15 @@ namespace MvcSiteMapProvider
         /// true if security trimming is enabled and <paramref name="node"/> can be viewed by the user or security trimming is not enabled; otherwise, false.
         /// </returns>
         /// <exception cref="T:System.ArgumentNullException">
-        /// 	<paramref name="context"/> is null.
-        /// - or -
-        /// <paramref name="node"/> is null.
+        ///     <paramref name="node"/> is null.
         /// </exception>
         public virtual bool IsAccessibleToUser(ISiteMapNode node)
         {
+            if (node == null)
+            {
+                throw new ArgumentNullException("node");
+            }
+
             // If the sitemap is still being constructed, always
             // make all nodes accessible regardless of security trimming.
             if (!IsReadOnly)
@@ -649,6 +671,11 @@ namespace MvcSiteMapProvider
 
         #region Protected Members
 
+        /// <summary>
+        /// Gets the current HTTP context.
+        /// </summary>
+        protected virtual HttpContextBase HttpContext { get { return this.mvcContextFactory.CreateHttpContext(); } }
+
         protected virtual ISiteMapNode GetParentNodesInternal(ISiteMapNode node, int walkupLevels)
         {
             if (walkupLevels > 0)
@@ -670,8 +697,8 @@ namespace MvcSiteMapProvider
         /// <returns></returns>
         protected virtual ISiteMapNode FindSiteMapNode(HttpContextBase httpContext)
         {
-            // Match RawUrl
-            var node = this.FindSiteMapNodeFromRawUrl(httpContext);
+            // Try URL
+            var node = this.FindSiteMapNodeFromPublicFacingUrl(httpContext);
 
             // Try MVC
             if (node == null)
@@ -679,36 +706,71 @@ namespace MvcSiteMapProvider
                 node = this.FindSiteMapNodeFromMvc(httpContext);
             }
 
-            // Try ASP.NET Classic (for interop)
-            if (node == null)
-            {
-                node = this.FindSiteMapNodeFromAspNetClassic(httpContext);
-            }
-
-            // Try the path without the querystring
-            if (node == null)
-            {
-                node = this.FindSiteMapNode(httpContext.Request.Path);
-            }
-
             // Check accessibility
             return this.ReturnNodeIfAccessible(node);
         }
 
-        protected virtual ISiteMapNode FindSiteMapNodeFromRawUrl(HttpContextBase httpContext)
+        protected virtual ISiteMapNode FindSiteMapNodeFromPublicFacingUrl(HttpContextBase httpContext)
         {
-            var rawUrl = httpContext.Request.RawUrl;
-            var node = this.FindSiteMapNode(rawUrl);
+            var publicFacingUrl = this.urlPath.GetPublicFacingUrl(httpContext);
+            return this.FindSiteMapNodeFromUrl(publicFacingUrl.PathAndQuery, publicFacingUrl.AbsolutePath, publicFacingUrl.Host, httpContext.CurrentHandler);
+        }
+
+        protected virtual ISiteMapNode FindSiteMapNodeFromUrl(string relativeUrl, string relativePath, string hostName, IHttpHandler handler)
+        {
+            ISiteMapNode node = null;
+
+            // Try absolute match with querystring
+            var absoluteMatch = this.siteMapChildStateFactory.CreateUrlKey(relativeUrl, hostName);
+            node = this.FindSiteMapNodeFromUrlMatch(absoluteMatch);
+
+            // Try absolute match without querystring
+            if (node == null && !string.IsNullOrEmpty(relativePath))
+            {
+                var absoluteMatchWithoutQueryString = this.siteMapChildStateFactory.CreateUrlKey(relativePath, hostName);
+                node = this.FindSiteMapNodeFromUrlMatch(absoluteMatchWithoutQueryString);
+            }
+
+            // Try relative match
             if (node == null)
             {
-                // Trim off the querystring from RawUrl and try again
-                int index = rawUrl.IndexOf("?", StringComparison.Ordinal);
-                if (index != -1)
+                var relativeMatch = this.siteMapChildStateFactory.CreateUrlKey(relativeUrl, string.Empty);
+                node = this.FindSiteMapNodeFromUrlMatch(relativeMatch);
+            }
+
+            // Try relative match with ASP.NET handler querystring
+            if (node == null)
+            {
+                Page currentHandler = handler as Page;
+                if (currentHandler != null)
                 {
-                    node = this.FindSiteMapNode(rawUrl.Substring(0, index));
+                    string clientQueryString = currentHandler.ClientQueryString;
+                    if (clientQueryString.Length > 0)
+                    {
+                        var aspNetRelativeMatch = this.siteMapChildStateFactory.CreateUrlKey(relativePath + "?" + clientQueryString, string.Empty);
+                        node = this.FindSiteMapNodeFromUrlMatch(aspNetRelativeMatch);
+                    }
                 }
             }
+
+            // Try relative match without querystring
+            if (node == null && !string.IsNullOrEmpty(relativePath))
+            {
+                var relativeMatchWithoutQueryString = this.siteMapChildStateFactory.CreateUrlKey(relativePath, string.Empty);
+                node = this.FindSiteMapNodeFromUrlMatch(relativeMatchWithoutQueryString);
+            }
+
             return node;
+        }
+
+        protected virtual ISiteMapNode FindSiteMapNodeFromUrlMatch(IUrlKey urlToMatch)
+        {
+            if (this.urlTable.ContainsKey(urlToMatch))
+            {
+                return this.urlTable[urlToMatch];
+            }
+
+            return null;
         }
 
         protected virtual ISiteMapNode FindSiteMapNodeFromMvc(HttpContextBase httpContext)
@@ -724,7 +786,6 @@ namespace MvcSiteMapProvider
         /// <summary>
         /// Finds the node that matches the MVC route.
         /// </summary>
-        /// <param name="rootNode">The root node.</param>
         /// <param name="values">The values.</param>
         /// <param name="route">The route.</param>
         /// <returns>
@@ -756,21 +817,6 @@ namespace MvcSiteMapProvider
             return null;
         }
 
-        protected virtual ISiteMapNode FindSiteMapNodeFromAspNetClassic(HttpContextBase httpContext)
-        {
-            ISiteMapNode node = null;
-            Page currentHandler = httpContext.CurrentHandler as Page;
-            if (currentHandler != null)
-            {
-                string clientQueryString = currentHandler.ClientQueryString;
-                if (clientQueryString.Length > 0)
-                {
-                    node = this.FindSiteMapNode(httpContext.Request.Path + "?" + clientQueryString);
-                }
-            }
-            return node;
-        }
-
         protected virtual RouteData GetMvcRouteData(HttpContextBase httpContext)
         {
             var routes = mvcContextFactory.GetRoutes();
@@ -793,14 +839,7 @@ namespace MvcSiteMapProvider
             {
                 if (!routeData.Values.ContainsKey("area"))
                 {
-                    if (routeData.DataTokens["area"] != null)
-                    {
-                        routeData.Values.Add("area", routeData.DataTokens["area"]);
-                    }
-                    else
-                    {
-                        routeData.Values.Add("area", "");
-                    }
+                    routeData.Values.Add("area", routeData.GetAreaName());
                 }
             }
         }
@@ -814,12 +853,6 @@ namespace MvcSiteMapProvider
             return null;
         }
 
-        protected virtual bool UsesDefaultUrlResolver(ISiteMapNode node)
-        {
-            return string.IsNullOrEmpty(node.UrlResolver) ||
-                typeof(MvcSiteMapProvider.Web.UrlResolver.SiteMapNodeUrlResolver).Equals(Type.GetType(node.UrlResolver, false));
-        }
-
         protected virtual void AssertSiteMapNodeConfigurationIsValid(ISiteMapNode node)
         {
             ThrowIfTitleNotSet(node);
@@ -828,6 +861,9 @@ namespace MvcSiteMapProvider
             ThrowIfActionAndUrlNotSet(node);
             ThrowIfHttpMethodInvalid(node);
             ThrowIfRouteValueIsPreservedRouteParameter(node);
+            ThrowIfHostNameInvalid(node);
+            ThrowIfCanonicalUrlHostNameInvalid(node);
+            ThrowIfImageUrlHostNameInvalid(node);
         }
 
         protected virtual void ThrowIfRouteValueIsPreservedRouteParameter(ISiteMapNode node)
@@ -837,59 +873,83 @@ namespace MvcSiteMapProvider
                 foreach (var key in node.PreservedRouteParameters)
                 {
                     if (node.RouteValues.ContainsKey(key))
-                        throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeSameKeyInRouteValueAndPreservedRouteParameter, node.Key, node.Title, key));
+                        throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeSameKeyInRouteValueAndPreservedRouteParameter, node.Key, node.Title, key));
                 }
             }
         }
 
         protected virtual void ThrowIfActionAndUrlNotSet(ISiteMapNode node)
         {
-            if (node.Clickable && String.IsNullOrEmpty(node.Action) && String.IsNullOrEmpty(node.UnresolvedUrl))
+            if (node.Clickable && string.IsNullOrEmpty(node.Action) && string.IsNullOrEmpty(node.UnresolvedUrl))
             {
-                throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeActionAndURLNotSet, node.Key, node.Title));
+                throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeActionAndURLNotSet, node.Key, node.Title));
             }
         }
 
         protected virtual void ThrowIfTitleNotSet(ISiteMapNode node)
         {
-            if (String.IsNullOrEmpty(node.Title))
+            if (string.IsNullOrEmpty(node.Title))
             {
-                throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeTitleNotSet, node.Key));
+                throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeTitleNotSet, node.Key));
             }
         }
 
         protected virtual void ThrowIfHttpMethodInvalid(ISiteMapNode node)
         {
             HttpVerbs verbs;
-            if (String.IsNullOrEmpty(node.HttpMethod) || 
+            if (string.IsNullOrEmpty(node.HttpMethod) || 
                 (!EnumHelper.TryParse<HttpVerbs>(node.HttpMethod, true, out verbs) && 
                 !node.HttpMethod.Equals("*") && 
                 !node.HttpMethod.Equals("Request", StringComparison.InvariantCultureIgnoreCase)))
             {
-                var allowedVerbs = String.Join(Environment.NewLine, Enum.GetNames(typeof(HttpVerbs))) + Environment.NewLine + "Request" + Environment.NewLine + "*";
-                throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeHttpMethodInvalid, node.Key, node.Title, node.HttpMethod, allowedVerbs));
+                var allowedVerbs = string.Join(Environment.NewLine, Enum.GetNames(typeof(HttpVerbs))) + Environment.NewLine + "Request" + Environment.NewLine + "*";
+                throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeHttpMethodInvalid, node.Key, node.Title, node.HttpMethod, allowedVerbs));
             }
         }
 
         protected virtual void ThrowIfControllerNameInvalid(ISiteMapNode node)
         {
-            if (!String.IsNullOrEmpty(node.Controller))
+            if (!string.IsNullOrEmpty(node.Controller))
             {
                 if (!node.Controller.IsValidIdentifier() || node.Controller.EndsWith("Controller"))
                 {
-                    throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeControllerNameInvalid, node.Key, node.Title, node.Controller));
+                    throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeControllerNameInvalid, node.Key, node.Title, node.Controller));
                 }
             }
         }
 
         protected virtual void ThrowIfAreaNameInvalid(ISiteMapNode node)
         {
-            if (!String.IsNullOrEmpty(node.Area))
+            if (!string.IsNullOrEmpty(node.Area))
             {
                 if (!node.Area.IsValidIdentifier())
                 {
-                    throw new MvcSiteMapException(String.Format(Resources.Messages.SiteMapNodeAreaNameInvalid, node.Key, node.Title, node.Area));
+                    throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeAreaNameInvalid, node.Key, node.Title, node.Area));
                 }
+            }
+        }
+
+        protected virtual void ThrowIfHostNameInvalid(ISiteMapNode node)
+        {
+            if (!string.IsNullOrEmpty(node.HostName) && node.HostName.Contains(":"))
+            {
+                throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeHostNameInvalid, node.Key, node.Title, node.HostName, "HostName"));
+            }
+        }
+
+        protected virtual void ThrowIfImageUrlHostNameInvalid(ISiteMapNode node)
+        {
+            if (!string.IsNullOrEmpty(node.ImageUrlHostName) && node.ImageUrlHostName.Contains(":"))
+            {
+                throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeHostNameInvalid, node.Key, node.Title, node.ImageUrlHostName, "ImageUrlHostName"));
+            }
+        }
+
+        protected virtual void ThrowIfCanonicalUrlHostNameInvalid(ISiteMapNode node)
+        {
+            if (!string.IsNullOrEmpty(node.CanonicalUrlHostName) && node.CanonicalUrlHostName.Contains(":"))
+            {
+                throw new MvcSiteMapException(string.Format(Resources.Messages.SiteMapNodeHostNameInvalid, node.Key, node.Title, node.CanonicalUrlHostName, "CanonicalUrlHostName"));
             }
         }
 
